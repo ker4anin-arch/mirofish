@@ -717,10 +717,12 @@ const resumeOrStartSimulation = async () => {
     emit('update-status', 'processing')
     startStatusPolling()
     startDetailPolling()
-  } else if (['completed', 'stopped', 'failed'].includes(status)) {
+  } else if (['completed', 'stopped'].includes(status)) {
+    // Finished: show the result so the report can be generated.
     await fetchRunStatus()
     await fetchRunStatusDetail()
   } else {
+    // Never started, or failed: there is nothing to keep, run it (again).
     doStartSimulation()
   }
 }
