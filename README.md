@@ -182,6 +182,21 @@ Reads `.env` from root directory by default. The UI and API are both served on `
 Neo4j data is kept in the `neo4j_data` volume; its browser UI is on `http://localhost:7474`.
 
 
+### Option 3: Your Own Server (VPS)
+
+On a fresh Ubuntu 22.04/24.04 server with at least 4 GB RAM, run as root:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ker4anin-arch/mirofish/claude/focused-knuth-3zzg2c/deploy/vps-setup.sh | bash
+```
+
+It installs Docker, pulls the prebuilt images from GHCR, asks for your
+DeepSeek key, generates the Neo4j and login passwords, and starts MiroFish
+behind Caddy with password protection at `http://<server-ip>`. Set
+`SITE_ADDRESS=your.domain` in `/opt/mirofish/.env` (with DNS pointing at the
+server) and re-run the script to get automatic HTTPS. Re-running it also
+updates to the latest version.
+
 ## 📬 Join the Conversation
 
 <div align="center">

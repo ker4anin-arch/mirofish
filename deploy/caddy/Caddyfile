@@ -1,0 +1,12 @@
+# SITE_ADDRESS: your domain (e.g. mirofish.example.com) for automatic HTTPS,
+# or ":80" to serve plain HTTP on the server IP.
+{$SITE_ADDRESS::80} {
+	encode gzip
+	basic_auth {
+		{$BASIC_AUTH_USER} {$BASIC_AUTH_HASH}
+	}
+	reverse_proxy mirofish:5001 {
+		# Live log/progress streams must not be buffered.
+		flush_interval -1
+	}
+}

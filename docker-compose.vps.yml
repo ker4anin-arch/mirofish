@@ -1,0 +1,61 @@
+# Server deployment: prebuilt images from GHCR + Caddy (password, optional HTTPS).
+# Usually started by deploy/vps-setup.sh:
+#   docker compose -f docker-compose.vps.yml pull
+#   docker compose -f docker-compose.vps.yml up -d
+# Only Caddy is reachable from outside (ports 80/443); MiroFish and Neo4j stay
+# on the internal Docker network.
+
+services:
+  neo4j:
+    image: ${IMAGE_PREFIX:-ghcr.io/ker4anin-arch}/mirofish-neo4j:latest
+    container_name: mirofish-neo4j
+    environment:
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:?set NEO4J_PASSWORD in .env}
+      # Sized for a 4 GB server shared with MiroFish and simulations.
+      NEO4J_server_memory_heap_initial__size: 512m
+      NEO4J_server_memory_heap_max__size: 768m
+      NEO4J_server_memory_pagecache_size: 256m
+    volumes:
+      - neo4j_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:7474 >/dev/null || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+    restart: unless-stopped
+
+  mirofish:
+    image: ${IMAGE_PREFIX:-ghcr.io/ker4anin-arch}/mirofish:latest
+    container_name: mirofish
+    env_file:
+      - .env
+    environment:
+      NEO4J_URI: bolt://neo4j:7687
+    depends_on:
+      neo4j:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:5001:5001"   # local access only (ssh tunnel / debugging)
+    volumes:
+      - ./backend/uploads:/app/backend/uploads
+    restart: unless-stopped
+
+  caddy:
+    image: ${IMAGE_PREFIX:-ghcr.io/ker4anin-arch}/mirofish-caddy:latest
+    container_name: mirofish-caddy
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+      BASIC_AUTH_USER: ${BASIC_AUTH_USER:?set BASIC_AUTH_USER in .env}
+      BASIC_AUTH_HASH: ${BASIC_AUTH_HASH:?set BASIC_AUTH_HASH in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddy_data:/data
+    depends_on:
+      - mirofish
+    restart: unless-stopped
+
+volumes:
+  neo4j_data:
+  caddy_data:
