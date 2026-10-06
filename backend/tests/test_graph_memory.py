@@ -118,3 +118,49 @@ def test_unknown_batch_is_not_found(batches):
     _, api = batches
     with pytest.raises(graph_memory.NotFoundError):
         api.get("missing")
+
+
+def _tolerant_client(raw_response):
+    from graphiti_core.llm_client.openai_generic_client import OpenAIGenericClient
+
+    client = graph_memory._build_llm_client()
+
+    async def fake_parent(self, messages, response_model=None, *args, **kwargs):
+        return raw_response
+
+    return client, fake_parent, OpenAIGenericClient
+
+
+def _run_tolerant(monkeypatch, raw_response, response_model):
+    import asyncio
+
+    monkeypatch.setattr(graph_memory.Config, "LLM_API_KEY", "test-key")
+    client, fake_parent, parent = _tolerant_client(raw_response)
+    monkeypatch.setattr(parent, "_generate_response", fake_parent)
+    return asyncio.run(client._generate_response([], response_model))
+
+
+def test_llm_schema_echo_is_unwrapped_and_extra_keys_dropped(monkeypatch):
+    from pydantic import BaseModel
+
+    class Attributes(BaseModel):
+        position: str | None = None
+
+    result = _run_tolerant(
+        monkeypatch,
+        {"properties": {"position": "mayor", "full_name": "Irina"}},
+        Attributes,
+    )
+    assert result == {"position": "mayor"}
+
+
+def test_llm_schema_mismatch_triggers_retryable_json_error(monkeypatch):
+    import json
+
+    from pydantic import BaseModel
+
+    class Duplicates(BaseModel):
+        duplicate_facts: list[int]
+
+    with pytest.raises(json.JSONDecodeError):
+        _run_tolerant(monkeypatch, {"something_else": 1}, Duplicates)

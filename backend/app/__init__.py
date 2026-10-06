@@ -72,6 +72,25 @@ def create_app(config_class=Config):
     @app.route('/health')
     def health():
         return {'status': 'ok', 'service': 'MiroFish Backend'}
+
+    # Serve the built frontend (frontend/dist) when present, so a single
+    # service can host both UI and API in production.
+    frontend_dist = os.environ.get(
+        'FRONTEND_DIST_DIR',
+        os.path.abspath(os.path.join(os.path.dirname(__file__), '../../frontend/dist')),
+    )
+    if os.path.isfile(os.path.join(frontend_dist, 'index.html')):
+        from flask import abort, send_from_directory
+
+        @app.route('/', defaults={'path': ''})
+        @app.route('/<path:path>')
+        def frontend(path):
+            if path.startswith('api/'):
+                abort(404)
+            if path and os.path.isfile(os.path.join(frontend_dist, path)):
+                return send_from_directory(frontend_dist, path)
+            # SPA history routing: unknown paths render the app shell.
+            return send_from_directory(frontend_dist, 'index.html')
     
     if should_log_startup:
         logger.info("MiroFish Backend 启动完成")

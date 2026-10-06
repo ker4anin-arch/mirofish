@@ -60,9 +60,9 @@ logging.getLogger("graphiti_core.driver.neo4j_driver").addFilter(_DropConcurrent
 T = TypeVar("T")
 
 GRAPH_LABEL = "MiroFishGraph"
-# Episodes are processed one by one (simulation memory) or in bulk slices of
-# this size (document ingestion). Bulk is much faster but holds more LLM calls
-# in flight; keep it modest for rate-limited providers.
+# Simulation memory is always ingested one episode at a time. Document chunks
+# are ingested in bulk slices of this size; 1 switches documents to
+# sequential ingestion too (slower, usually extracts more relations).
 BULK_SLICE_SIZE = int(os.environ.get("GRAPH_BULK_SLICE_SIZE", "10"))
 
 
@@ -409,8 +409,45 @@ def _build_llm_client():
     from graphiti_core.llm_client.config import LLMConfig
     from graphiti_core.llm_client.openai_generic_client import OpenAIGenericClient
 
+    from pydantic import ValidationError
+
+    class TolerantJSONClient(OpenAIGenericClient):
+        """Repairs common json_object-mode mistakes before Graphiti parses them.
+
+        In json_object mode the schema is only described in the prompt, and
+        some providers (DeepSeek) occasionally answer with the schema's shape,
+        e.g. ``{"properties": {...actual fields...}}``. Unwrap that, and turn
+        any remaining schema mismatch into a JSONDecodeError so Graphiti's
+        built-in retry re-asks instead of failing the whole episode.
+        """
+
+        async def _generate_response(self, messages, response_model=None, *args, **kwargs):
+            result = await super()._generate_response(messages, response_model, *args, **kwargs)
+            if response_model is None or not isinstance(result, dict):
+                return result
+            fields = set(response_model.model_fields)
+            nested = result.get("properties")
+            if (
+                "properties" not in fields
+                and isinstance(nested, dict)
+                and not (result.keys() & fields)
+            ):
+                result = nested
+            # Graphiti stores some responses (entity attributes) verbatim as
+            # node properties, so undeclared keys must not leak through.
+            result = {key: value for key, value in result.items() if key in fields}
+            try:
+                response_model.model_validate(result)
+            except ValidationError as error:
+                raise json.JSONDecodeError(
+                    f"response does not match {response_model.__name__}: {error.errors()[:3]}",
+                    json.dumps(result, ensure_ascii=False)[:200],
+                    0,
+                ) from error
+            return result
+
     model = Config.GRAPH_LLM_MODEL_NAME or Config.LLM_MODEL_NAME
-    return OpenAIGenericClient(
+    return TolerantJSONClient(
         config=LLMConfig(
             api_key=Config.LLM_API_KEY,
             base_url=Config.LLM_BASE_URL,
@@ -593,7 +630,7 @@ class _GraphEngine:
         for missing in set(job.episode_uuids) - set(by_uuid):
             self.set_state(missing, "failed", "episode not found")
 
-        if job.bulk and len(ordered) > 1:
+        if job.bulk and BULK_SLICE_SIZE > 1 and len(ordered) > 1:
             for start in range(0, len(ordered), BULK_SLICE_SIZE):
                 chunk = ordered[start:start + BULK_SLICE_SIZE]
                 for episode in chunk:

@@ -120,7 +120,7 @@ cp .env.example .env
 # High consumption, try simulations with fewer than 40 rounds first
 LLM_API_KEY=your_api_key
 LLM_BASE_URL=https://api.deepseek.com/v1
-LLM_MODEL_NAME=deepseek-chat
+LLM_MODEL_NAME=deepseek-flash
 
 # Knowledge graph memory: self-hosted Graphiti + Neo4j (replaces Zep Cloud)
 NEO4J_URI=bolt://localhost:7687
@@ -178,7 +178,7 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-Reads `.env` from root directory by default, maps ports `3000 (frontend) / 5001 (backend)`.
+Reads `.env` from root directory by default. The UI and API are both served on `http://localhost:5001`.
 Neo4j data is kept in the `neo4j_data` volume; its browser UI is on `http://localhost:7474`.
 
 

@@ -173,7 +173,7 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-默认会读取根目录下的 `.env`，并映射端口 `3000（前端）/5001（后端）`
+默认会读取根目录下的 `.env`，前端与 API 均通过 `http://localhost:5001` 提供
 
 ## 📬 更多交流
 

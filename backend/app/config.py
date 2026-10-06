@@ -30,7 +30,12 @@ class Config:
     LLM_MODEL_NAME = os.environ.get('LLM_MODEL_NAME', 'gpt-4o-mini')
     
     # Knowledge graph memory (Graphiti + Neo4j, replaces Zep Cloud)
-    NEO4J_URI = os.environ.get('NEO4J_URI', 'bolt://localhost:7687')
+    # NEO4J_HOST alone is enough when the host is injected by the platform
+    # (Render's fromService); NEO4J_URI wins when both are set.
+    NEO4J_URI = os.environ.get('NEO4J_URI') or (
+        f"bolt://{os.environ['NEO4J_HOST']}:7687" if os.environ.get('NEO4J_HOST')
+        else 'bolt://localhost:7687'
+    )
     NEO4J_USER = os.environ.get('NEO4J_USER', 'neo4j')
     NEO4J_PASSWORD = os.environ.get('NEO4J_PASSWORD')
     NEO4J_DATABASE = os.environ.get('NEO4J_DATABASE', 'neo4j')

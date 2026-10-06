@@ -25,6 +25,8 @@ dependencies = [
     # OASIS 社交媒体模拟
     "camel-oasis==0.2.5",
     "camel-ai==0.2.78",
+    # Declared directly only so [tool.uv.sources] can pin the CPU build below.
+    "torch==2.9.1",
     
     # 文件处理
     "PyMuPDF>=1.24.0",
@@ -61,3 +63,13 @@ packages = ["app"]
 # camel-oasis pins neo4j==5.23.0 but only uses the stable GraphDatabase API;
 # graphiti-core needs a newer driver.
 override-dependencies = ["neo4j>=5.26.0"]
+
+# CPU-only PyTorch on Linux (pulled in by camel-oasis -> sentence-transformers).
+# The default CUDA build adds ~3 GB of GPU libraries that MiroFish never uses.
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]

@@ -1,0 +1,64 @@
+# Render Blueprint: MiroFish web service + private Neo4j.
+# Deploy: Render dashboard -> New -> Blueprint -> pick this repo.
+# You'll be asked for LLM_API_KEY; the Neo4j password is generated for you.
+#
+# Cheaper test alternative: use a free Neo4j AuraDB instance instead of the
+# private service. Delete the "mirofish-neo4j" service below, remove
+# NEO4J_HOST from the web service, and set NEO4J_URI (neo4j+s://...),
+# NEO4J_USER and NEO4J_PASSWORD on the web service.
+
+envVarGroups:
+  - name: mirofish-neo4j
+    envVars:
+      - key: NEO4J_PASSWORD
+        generateValue: true
+
+services:
+  - type: web
+    name: mirofish
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    # Simulations, torch and the local embedding model need more than 512 MB.
+    plan: standard
+    healthCheckPath: /health
+    autoDeploy: false
+    disk:
+      # Projects, uploaded documents, simulations and reports live here.
+      name: mirofish-uploads
+      mountPath: /app/backend/uploads
+      sizeGB: 5
+    envVars:
+      - fromGroup: mirofish-neo4j
+      - key: NEO4J_HOST
+        fromService:
+          type: pserv
+          name: mirofish-neo4j
+          property: host
+      - key: LLM_API_KEY
+        sync: false
+      - key: LLM_BASE_URL
+        value: https://api.deepseek.com/v1
+      - key: LLM_MODEL_NAME
+        value: deepseek-flash
+      - key: SECRET_KEY
+        generateValue: true
+
+  - type: pserv
+    name: mirofish-neo4j
+    runtime: docker
+    dockerfilePath: ./deploy/neo4j/Dockerfile
+    dockerContext: ./deploy/neo4j
+    plan: standard
+    disk:
+      name: neo4j-data
+      mountPath: /data
+      sizeGB: 5
+    envVars:
+      - fromGroup: mirofish-neo4j
+      - key: NEO4J_server_memory_heap_initial__size
+        value: 512m
+      - key: NEO4J_server_memory_heap_max__size
+        value: 1g
+      - key: NEO4J_server_memory_pagecache_size
+        value: 512m

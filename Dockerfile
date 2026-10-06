@@ -1,29 +1,36 @@
-FROM python:3.11
+# Production image: the backend serves the API and the built frontend on one
+# port ($PORT, default 5001), which is what single-port hosts like Render need.
 
-# 安装 Node.js （满足 >=18）及必要工具
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends nodejs npm \
-  && rm -rf /var/lib/apt/lists/*
+# ---- frontend build ----
+FROM node:20-slim AS frontend
+WORKDIR /app
+COPY frontend/package.json frontend/package-lock.json ./frontend/
+RUN npm ci --prefix frontend
+COPY frontend ./frontend
+COPY locales ./locales
+RUN npm run build --prefix frontend
 
-# 从 uv 官方镜像复制 uv
+# ---- backend runtime ----
+FROM python:3.11-slim
 COPY --from=ghcr.io/astral-sh/uv:0.9.26 /uv /uvx /bin/
 
-WORKDIR /app
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    PYTHONUNBUFFERED=1 \
+    FASTEMBED_CACHE_PATH=/app/.cache/fastembed \
+    PORT=5001
 
-# 先复制依赖描述文件以利用缓存
-COPY package.json package-lock.json ./
-COPY frontend/package.json frontend/package-lock.json ./frontend/
-COPY backend/pyproject.toml backend/uv.lock ./backend/
+WORKDIR /app/backend
+COPY backend/pyproject.toml backend/uv.lock ./
+RUN uv sync --frozen --no-dev --no-install-project
 
-# 安装依赖（Node + Python）
-RUN npm ci \
-  && npm ci --prefix frontend \
-  && cd backend && uv sync --frozen
+# Bake the default local embedding model into the image so the first start
+# does not depend on downloading it.
+RUN .venv/bin/python -c "from fastembed import TextEmbedding; TextEmbedding('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2')"
 
-# 复制项目源码
-COPY . .
+COPY backend ./
+COPY locales /app/locales
+COPY --from=frontend /app/frontend/dist /app/frontend/dist
 
-EXPOSE 3000 5001
-
-# 同时启动前后端（开发模式）
-CMD ["npm", "run", "dev"]
+EXPOSE 5001
+CMD [".venv/bin/python", "run.py"]
