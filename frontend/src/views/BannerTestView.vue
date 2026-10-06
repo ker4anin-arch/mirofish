@@ -1,0 +1,457 @@
+<template>
+  <div class="bt-container">
+    <nav class="navbar">
+      <div class="nav-brand" @click="router.push('/')">MIROFISH</div>
+      <div class="nav-links">
+        <LanguageSwitcher />
+      </div>
+    </nav>
+
+    <div class="bt-content">
+      <!-- ======================= Form ======================= -->
+      <section v-if="!testId" class="bt-form">
+        <h1 class="bt-title">{{ $t('banner.title') }}</h1>
+        <p class="bt-lead">{{ $t('banner.lead') }}</p>
+
+        <div class="bt-field">
+          <label class="bt-label">{{ $t('banner.audienceLabel') }}</label>
+          <p class="bt-hint">{{ $t('banner.audienceHint') }}</p>
+          <input type="file" multiple accept=".md,.txt,.pdf,.markdown" @change="onAudienceFiles" />
+          <ul v-if="audienceFiles.length" class="bt-files">
+            <li v-for="f in audienceFiles" :key="f.name">{{ f.name }}</li>
+          </ul>
+          <textarea
+            v-model="audienceText"
+            rows="3"
+            class="bt-textarea"
+            :placeholder="$t('banner.audienceTextPlaceholder')"
+          ></textarea>
+        </div>
+
+        <div class="bt-field">
+          <label class="bt-label">{{ $t('banner.bannersLabel') }}</label>
+          <p class="bt-hint">{{ $t('banner.bannersHint') }}</p>
+          <input type="file" multiple accept="image/png,image/jpeg,image/webp" @change="onBannerFiles" />
+          <div v-if="bannerPreviews.length" class="bt-previews">
+            <figure v-for="(p, i) in bannerPreviews" :key="p.url" class="bt-preview">
+              <img :src="p.url" :alt="p.name" />
+              <figcaption>{{ String.fromCharCode(65 + i) }} — {{ p.name }}</figcaption>
+            </figure>
+          </div>
+        </div>
+
+        <div class="bt-row">
+          <div class="bt-field">
+            <label class="bt-label">{{ $t('banner.placementLabel') }}</label>
+            <select v-model="placement" class="bt-select">
+              <option v-for="p in placements" :key="p" :value="p">{{ $t(`banner.placements.${p}`) }}</option>
+            </select>
+          </div>
+          <div class="bt-field">
+            <label class="bt-label">{{ $t('banner.panelLabel') }}</label>
+            <input v-model.number="panelSize" type="number" min="5" max="300" step="10" class="bt-number" />
+            <p class="bt-hint">{{ $t('banner.panelHint') }}</p>
+          </div>
+        </div>
+
+        <div class="bt-field">
+          <label class="bt-label">{{ $t('banner.goalLabel') }}</label>
+          <textarea v-model="goal" rows="2" class="bt-textarea" :placeholder="$t('banner.goalPlaceholder')"></textarea>
+        </div>
+
+        <p v-if="error" class="bt-error">{{ error }}</p>
+        <button class="bt-btn" :disabled="!canSubmit || submitting" @click="submit">
+          {{ submitting ? $t('banner.starting') : $t('banner.start') }} →
+        </button>
+
+        <div v-if="history.length" class="bt-history">
+          <h2>{{ $t('banner.historyTitle') }}</h2>
+          <ul>
+            <li v-for="h in history" :key="h.test_id">
+              <a href="#" @click.prevent="openTest(h.test_id)">{{ h.title }}</a>
+              <span class="bt-muted"> · {{ h.created_at?.replace('T', ' ') }} · {{ statusText(h.status) }}</span>
+            </li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- ======================= Progress / results ======================= -->
+      <section v-else class="bt-result">
+        <a href="#" class="bt-back" @click.prevent="backToForm">← {{ $t('banner.newTest') }}</a>
+        <h1 class="bt-title">{{ test?.title || $t('banner.title') }}</h1>
+        <p class="bt-muted" v-if="test">
+          {{ $t(`banner.placements.${test.placement}`) }} · {{ $t('banner.panelOf', { count: test.panel_actual || test.panel_size }) }}
+        </p>
+
+        <div v-if="test && test.status !== 'completed' && test.status !== 'failed'" class="bt-progress">
+          <div class="bt-bar"><div class="bt-bar-fill" :style="{ width: (test.progress || 0) + '%' }"></div></div>
+          <p>{{ test.message || $t('banner.waiting') }} ({{ test.progress || 0 }}%)</p>
+        </div>
+        <p v-if="test?.status === 'failed'" class="bt-error">{{ $t('banner.failed') }}: {{ test.message }}</p>
+
+        <template v-if="test?.status === 'completed' && test.stats">
+          <p class="bt-note">{{ $t('banner.syntheticNote') }}</p>
+
+          <div class="bt-cards">
+            <div
+              v-for="b in test.banners"
+              :key="b.label"
+              class="bt-card"
+              :class="{ winner: test.stats.ranking?.[0] === b.label }"
+            >
+              <div class="bt-card-head">
+                <strong>{{ b.label }}</strong> {{ b.name }}
+                <span v-if="test.stats.ranking?.[0] === b.label" class="bt-badge">{{ $t('banner.leader') }}</span>
+              </div>
+              <img :src="imageUrl(b.label)" :alt="b.name" />
+              <table class="bt-metrics">
+                <tr v-for="m in metricRows" :key="m.key">
+                  <td>{{ $t(`banner.metrics.${m.key}`) }}</td>
+                  <td class="num">{{ formatMetric(test.stats.banners[b.label]?.overall?.[m.key], m.pct) }}</td>
+                </tr>
+              </table>
+              <div v-if="test.stats.banners[b.label]?.top_objections?.length" class="bt-objections">
+                <strong>{{ $t('banner.objections') }}</strong>
+                <ul>
+                  <li v-for="o in test.stats.banners[b.label].top_objections.slice(0, 4)" :key="o">{{ o }}</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          <h2>{{ $t('banner.bySegment') }}</h2>
+          <div class="bt-table-wrap">
+            <table class="bt-segments">
+              <thead>
+                <tr>
+                  <th>{{ $t('banner.segment') }}</th>
+                  <th v-for="b in test.banners" :key="b.label">{{ b.label }}: {{ $t('banner.metrics.click_intent') }}</th>
+                  <th v-for="b in test.banners" :key="b.label + 't'">{{ b.label }}: {{ $t('banner.metrics.trust') }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="seg in segmentNames" :key="seg">
+                  <td>{{ seg }} <span class="bt-muted">({{ segmentSize(seg) }})</span></td>
+                  <td v-for="b in test.banners" :key="b.label" class="num">
+                    {{ formatMetric(test.stats.banners[b.label]?.segments?.[seg]?.click_intent) }}
+                  </td>
+                  <td v-for="b in test.banners" :key="b.label + 't'" class="num">
+                    {{ formatMetric(test.stats.banners[b.label]?.segments?.[seg]?.trust) }}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h2>{{ $t('banner.report') }}</h2>
+          <div class="bt-report" v-html="renderMarkdown(test.report || '')"></div>
+
+          <h2>{{ $t('banner.quotes') }}</h2>
+          <div class="bt-quotes">
+            <div v-for="(a, i) in quotes" :key="i" class="bt-quote">
+              <span class="bt-muted">{{ a.banner }} · {{ a.segment }} · {{ $t('banner.metrics.click_intent') }} {{ a.click_intent }}/5</span>
+              <p>«{{ a.reaction }}»</p>
+            </div>
+          </div>
+        </template>
+      </section>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
+import LanguageSwitcher from '../components/LanguageSwitcher.vue'
+import {
+  createBannerTest,
+  getBannerTest,
+  listBannerTests,
+  getBannerAnswers,
+  bannerImageUrl
+} from '../api/banner'
+
+const { t } = useI18n()
+const route = useRoute()
+const router = useRouter()
+
+const placements = ['vk_feed', 'telegram', 'website', 'rsya', 'outdoor', 'other']
+const metricRows = [
+  { key: 'click_intent' },
+  { key: 'would_click_pct', pct: true },
+  { key: 'clarity' },
+  { key: 'understood_pct', pct: true },
+  { key: 'trust' },
+  { key: 'relevance' }
+]
+
+// form state
+const audienceFiles = ref([])
+const audienceText = ref('')
+const bannerFiles = ref([])
+const bannerPreviews = ref([])
+const placement = ref('vk_feed')
+const panelSize = ref(100)
+const goal = ref('')
+const submitting = ref(false)
+const error = ref('')
+const history = ref([])
+
+// result state
+const testId = ref(route.params.testId || null)
+const test = ref(null)
+const answers = ref([])
+let pollTimer = null
+
+const canSubmit = computed(() =>
+  bannerFiles.value.length > 0 && (audienceFiles.value.length > 0 || audienceText.value.trim() !== '')
+)
+
+const onAudienceFiles = (event) => {
+  audienceFiles.value = Array.from(event.target.files || [])
+}
+
+const onBannerFiles = (event) => {
+  bannerPreviews.value.forEach((p) => URL.revokeObjectURL(p.url))
+  const files = Array.from(event.target.files || []).slice(0, 5)
+  bannerFiles.value = files
+  bannerPreviews.value = files.map((f) => ({ name: f.name, url: URL.createObjectURL(f) }))
+}
+
+const submit = async () => {
+  error.value = ''
+  submitting.value = true
+  try {
+    const form = new FormData()
+    audienceFiles.value.forEach((f) => form.append('audience', f))
+    if (audienceText.value.trim()) form.append('audience_text', audienceText.value.trim())
+    bannerFiles.value.forEach((f) => form.append('banners', f))
+    form.append('placement', placement.value)
+    form.append('panel_size', String(panelSize.value || 100))
+    form.append('goal', goal.value)
+    form.append('title', goal.value.slice(0, 80))
+    const res = await createBannerTest(form)
+    openTest(res.data.test_id)
+  } catch (err) {
+    error.value = err.message
+  } finally {
+    submitting.value = false
+  }
+}
+
+const openTest = (id) => {
+  router.push({ name: 'BannerTestResult', params: { testId: id } })
+}
+
+const backToForm = () => {
+  router.push({ name: 'BannerTest' })
+}
+
+const loadTest = async () => {
+  if (!testId.value) return
+  try {
+    const res = await getBannerTest(testId.value)
+    test.value = res.data
+    if (['completed', 'failed'].includes(test.value.status)) {
+      stopPolling()
+      if (test.value.status === 'completed') {
+        const ans = await getBannerAnswers(testId.value)
+        answers.value = ans.data || []
+      }
+    }
+  } catch (err) {
+    error.value = err.message
+    stopPolling()
+  }
+}
+
+const startPolling = () => {
+  stopPolling()
+  loadTest()
+  pollTimer = setInterval(loadTest, 3000)
+}
+
+const stopPolling = () => {
+  if (pollTimer) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
+}
+
+const loadHistory = async () => {
+  try {
+    const res = await listBannerTests()
+    history.value = res.data || []
+  } catch {
+    history.value = []
+  }
+}
+
+watch(() => route.params.testId, (id) => {
+  testId.value = id || null
+  test.value = null
+  answers.value = []
+  if (id) startPolling()
+  else {
+    stopPolling()
+    loadHistory()
+  }
+})
+
+onMounted(() => {
+  if (testId.value) startPolling()
+  else loadHistory()
+})
+
+onUnmounted(stopPolling)
+
+const imageUrl = (label) => bannerImageUrl(testId.value, label)
+
+const statusText = (status) => t(`banner.status.${status}`, status)
+
+const formatMetric = (value, pct = false) => {
+  if (value === null || value === undefined) return '—'
+  return pct ? `${value}%` : Number(value).toFixed(1)
+}
+
+const segmentNames = computed(() => {
+  const names = new Set()
+  Object.values(test.value?.stats?.banners || {}).forEach((b) =>
+    Object.keys(b.segments || {}).forEach((s) => names.add(s))
+  )
+  return Array.from(names)
+})
+
+const segmentSize = (seg) => {
+  const first = test.value?.banners?.[0]?.label
+  return test.value?.stats?.banners?.[first]?.segments?.[seg]?.n ?? ''
+}
+
+const quotes = computed(() => {
+  // A spread of reactions: best and worst click intent per banner.
+  const out = []
+  const byBanner = {}
+  answers.value.forEach((a) => {
+    if (a.reaction) (byBanner[a.banner] = byBanner[a.banner] || []).push(a)
+  })
+  Object.values(byBanner).forEach((rows) => {
+    const sorted = [...rows].sort((x, y) => (y.click_intent || 0) - (x.click_intent || 0))
+    out.push(...sorted.slice(0, 3), ...sorted.slice(-3))
+  })
+  return out
+})
+
+// Minimal, safe Markdown: escape HTML first, then headings, bold, lists, tables.
+const escapeHtml = (s) =>
+  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+
+const inline = (s) => s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+
+const renderMarkdown = (md) => {
+  const lines = escapeHtml(md).split('\n')
+  const html = []
+  let list = null
+  let table = []
+  const flushList = () => {
+    if (list) {
+      html.push(`<${list.tag}>${list.items.map((i) => `<li>${inline(i)}</li>`).join('')}</${list.tag}>`)
+      list = null
+    }
+  }
+  const flushTable = () => {
+    if (table.length) {
+      const rows = table.filter((r) => !/^\|?\s*:?-{2,}/.test(r))
+      const cells = (r) => r.replace(/^\||\|$/g, '').split('|').map((c) => inline(c.trim()))
+      const [head, ...body] = rows
+      html.push(
+        '<table><thead><tr>' + cells(head).map((c) => `<th>${c}</th>`).join('') + '</tr></thead><tbody>' +
+        body.map((r) => '<tr>' + cells(r).map((c) => `<td>${c}</td>`).join('') + '</tr>').join('') +
+        '</tbody></table>'
+      )
+      table = []
+    }
+  }
+  for (const raw of lines) {
+    const line = raw.trimEnd()
+    if (line.trim().startsWith('|')) { flushList(); table.push(line.trim()); continue }
+    flushTable()
+    let m
+    if ((m = line.match(/^(#{1,4})\s+(.*)$/))) { flushList(); const lvl = Math.min(m[1].length + 1, 5); html.push(`<h${lvl}>${inline(m[2])}</h${lvl}>`); continue }
+    if ((m = line.match(/^\s*[-*]\s+(.*)$/))) { if (!list || list.tag !== 'ul') { flushList(); list = { tag: 'ul', items: [] } } list.items.push(m[1]); continue }
+    if ((m = line.match(/^\s*\d+[.)]\s+(.*)$/))) { if (!list || list.tag !== 'ol') { flushList(); list = { tag: 'ol', items: [] } } list.items.push(m[1]); continue }
+    flushList()
+    if (line.trim()) html.push(`<p>${inline(line)}</p>`)
+  }
+  flushList()
+  flushTable()
+  return html.join('\n')
+}
+</script>
+
+<style scoped>
+.bt-container { min-height: 100vh; background: #fff; color: #111; }
+.navbar {
+  height: 60px; background: #000; color: #fff; display: flex;
+  justify-content: space-between; align-items: center; padding: 0 40px;
+}
+.nav-brand { font-family: 'JetBrains Mono', monospace; font-weight: 800; letter-spacing: 1px; cursor: pointer; }
+.nav-links { display: flex; align-items: center; gap: 16px; }
+.bt-content { max-width: 1200px; margin: 0 auto; padding: 40px 24px 80px; }
+.bt-title { font-size: 2rem; margin: 0 0 8px; }
+.bt-lead { color: #555; max-width: 760px; line-height: 1.6; margin-bottom: 32px; }
+.bt-field { margin-bottom: 24px; flex: 1; }
+.bt-row { display: flex; gap: 32px; flex-wrap: wrap; }
+.bt-label { display: block; font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; font-weight: 600; margin-bottom: 6px; }
+.bt-hint { color: #888; font-size: 0.82rem; margin: 0 0 8px; line-height: 1.5; }
+.bt-textarea, .bt-select, .bt-number {
+  width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid #ddd;
+  background: #fafafa; font: inherit; margin-top: 8px;
+}
+.bt-number { width: 140px; }
+.bt-files { margin: 8px 0 0; padding-left: 18px; color: #555; font-size: 0.9rem; }
+.bt-previews { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 12px; }
+.bt-preview { margin: 0; width: 220px; }
+.bt-preview img { width: 100%; border: 1px solid #eee; }
+.bt-preview figcaption { font-size: 0.8rem; color: #666; margin-top: 4px; }
+.bt-btn {
+  background: #000; color: #fff; border: none; padding: 14px 28px; font-size: 1rem;
+  font-family: 'JetBrains Mono', monospace; cursor: pointer;
+}
+.bt-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.bt-error { color: #c62828; }
+.bt-muted { color: #888; font-size: 0.85rem; }
+.bt-history { margin-top: 48px; }
+.bt-history h2 { font-size: 1.1rem; }
+.bt-history li { margin-bottom: 6px; }
+.bt-back { color: #555; text-decoration: none; font-size: 0.9rem; }
+.bt-progress { margin: 32px 0; }
+.bt-bar { height: 8px; background: #eee; }
+.bt-bar-fill { height: 100%; background: #FF4500; transition: width 0.5s; }
+.bt-note { background: #fff8e1; border-left: 3px solid #f5b400; padding: 10px 14px; font-size: 0.88rem; color: #555; }
+.bt-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin: 24px 0 40px; }
+.bt-card { border: 1px solid #e5e5e5; padding: 16px; }
+.bt-card.winner { border: 2px solid #FF4500; }
+.bt-card img { width: 100%; border: 1px solid #eee; margin: 10px 0; }
+.bt-card-head { font-size: 0.95rem; }
+.bt-badge { background: #FF4500; color: #fff; font-size: 0.72rem; padding: 2px 8px; margin-left: 6px; }
+.bt-metrics { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+.bt-metrics td { padding: 4px 0; border-bottom: 1px solid #f2f2f2; }
+.num { text-align: right; font-family: 'JetBrains Mono', monospace; }
+.bt-objections { margin-top: 12px; font-size: 0.85rem; color: #444; }
+.bt-objections ul { padding-left: 18px; margin: 6px 0 0; }
+.bt-table-wrap { overflow-x: auto; }
+.bt-segments { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+.bt-segments th, .bt-segments td { border-bottom: 1px solid #eee; padding: 8px 10px; text-align: left; }
+.bt-segments th { font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; color: #666; }
+.bt-report { line-height: 1.65; max-width: 900px; }
+.bt-report :deep(table) { border-collapse: collapse; margin: 12px 0; font-size: 0.88rem; display: block; overflow-x: auto; }
+.bt-report :deep(th), .bt-report :deep(td) { border: 1px solid #e5e5e5; padding: 6px 8px; text-align: left; }
+.bt-quotes { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
+.bt-quote { border-left: 3px solid #ddd; padding: 6px 12px; }
+.bt-quote p { margin: 4px 0 0; }
+@media (max-width: 640px) {
+  .navbar { padding: 0 16px; }
+  .bt-content { padding: 24px 16px 60px; }
+}
+</style>

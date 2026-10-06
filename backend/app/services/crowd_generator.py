@@ -94,17 +94,23 @@ class CrowdGenerator:
         simulation_requirement: str,
         entities: List[EntityNode],
         total: int,
+        context_text: Optional[str] = None,
     ) -> List[AudienceSegment]:
         system = (
             "You design audiences for social-media opinion simulations. Return valid JSON only.\n"
             + get_language_instruction()
         )
+        audience_block = (
+            f"\nAudience description provided by the user (follow its segments and shares when given):\n"
+            f"{context_text[:15000]}\n"
+            if context_text else ""
+        )
         prompt = f"""Scenario / question to simulate:
 {simulation_requirement}
 
 Entities found in the source documents:
-{self._entity_digest(entities)}
-
+{self._entity_digest(entities) or "(none)"}
+{audience_block}
 Plan the ordinary audience that would see and react to this topic online: {total} people in total.
 - Split them into 3-8 segments of ordinary people (readers, customers, citizens...).
 - If some entities above describe typical audience members or reader types (composite
@@ -196,12 +202,13 @@ Return JSON:
         start_user_id: int,
         parallel_count: int = 5,
         progress_callback: Optional[Callable[[int, int, str], None]] = None,
+        context_text: Optional[str] = None,
     ) -> Tuple[List[OasisAgentProfile], List[EntityNode]]:
         total = max(0, min(int(total), MAX_CROWD_SIZE))
         if total == 0:
             return [], []
 
-        segments = self.plan_segments(simulation_requirement, entities, total)
+        segments = self.plan_segments(simulation_requirement, entities, total, context_text=context_text)
         logger.info(
             "Crowd plan: %s",
             ", ".join(f"{segment.name}={segment.count}" for segment in segments),

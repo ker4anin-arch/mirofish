@@ -41,6 +41,16 @@ const routes = [
     name: 'Interaction',
     component: InteractionView,
     props: true
+  },
+  {
+    path: '/banner-test',
+    name: 'BannerTest',
+    component: () => import('../views/BannerTestView.vue')
+  },
+  {
+    path: '/banner-test/:testId',
+    name: 'BannerTestResult',
+    component: () => import('../views/BannerTestView.vue')
   }
 ]
 

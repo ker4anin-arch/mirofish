@@ -678,5 +678,56 @@
     "llmSelectAgentFailed": "LLM选择Agent失败，使用默认选择: {error}",
     "generateInterviewQuestionsFailed": "生成采访问题失败: {error}",
     "generateInterviewSummaryFailed": "生成采访摘要失败: {error}"
+  },
+  "banner": {
+    "navLink": "Banner test",
+    "title": "Banner test",
+    "lead": "A synthetic panel built from your audience looks at banners the way people do in a feed: for a second or two. Each member says what they noticed, whether they got the offer, whether they trust it and would click. You get a comparison by segment and concrete fixes.",
+    "audienceLabel": "Audience",
+    "audienceHint": "A file describing the audience (.md, .txt, .pdf). You can add details as text.",
+    "audienceTextPlaceholder": "Optional: audience details, segment shares, analytics data...",
+    "bannersLabel": "Banners",
+    "bannersHint": "1–5 images (PNG, JPG, WEBP). Variants get letters A, B, C… in the order selected.",
+    "placementLabel": "Placement",
+    "panelLabel": "Panel size",
+    "panelHint": "5–300 people. 100 is a good balance: about 5–10 minutes.",
+    "goalLabel": "What is promoted",
+    "goalPlaceholder": "E.g. an online cash register at 50% off for small businesses",
+    "start": "Run test",
+    "starting": "Starting...",
+    "historyTitle": "Previous tests",
+    "newTest": "New test",
+    "waiting": "Waiting...",
+    "failed": "Test failed",
+    "panelOf": "panel: {count} people",
+    "syntheticNote": "This is a synthetic panel: models are more attentive than real people, so absolute scores are inflated. Compare variants with each other and read the objections.",
+    "leader": "leader",
+    "objections": "Common objections",
+    "bySegment": "By segment",
+    "segment": "Segment",
+    "report": "Report",
+    "quotes": "Panel reactions",
+    "metrics": {
+      "click_intent": "Click intent (1–5)",
+      "would_click_pct": "Would click (4–5)",
+      "clarity": "Clarity (1–5)",
+      "understood_pct": "Understood the offer",
+      "trust": "Trust (1–5)",
+      "relevance": "Relevance (1–5)"
+    },
+    "placements": {
+      "vk_feed": "VK feed",
+      "telegram": "Telegram channel",
+      "website": "Website / media",
+      "rsya": "Yandex Ad Network",
+      "outdoor": "Outdoor",
+      "other": "Other"
+    },
+    "status": {
+      "queued": "queued",
+      "running": "running",
+      "completed": "done",
+      "failed": "failed"
+    }
   }
 }
