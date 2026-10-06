@@ -776,6 +776,16 @@ const selectProfile = (profile) => {
   selectedProfile.value = profile
 }
 
+// Extra audience size chosen on the home page (server default when unset).
+const crowdSizeParam = () => {
+  try {
+    const saved = localStorage.getItem('crowdSize')
+    return saved === null ? {} : { crowd_size: Number(saved) }
+  } catch {
+    return {}
+  }
+}
+
 // 自动开始准备模拟
 const startPrepareSimulation = async () => {
   if (!props.simulationId) {
@@ -794,7 +804,8 @@ const startPrepareSimulation = async () => {
     const res = await prepareSimulation({
       simulation_id: props.simulationId,
       use_llm_for_profiles: true,
-      parallel_profile_count: 5
+      parallel_profile_count: 5,
+      ...crowdSizeParam()
     })
     
     if (res.success && res.data) {

@@ -75,7 +75,13 @@
     "layoutGraph": "图谱",
     "layoutSplit": "双栏",
     "layoutWorkbench": "工作台",
-    "stepNames": ["图谱构建", "环境搭建", "开始模拟", "报告生成", "深度互动"]
+    "stepNames": [
+      "图谱构建",
+      "环境搭建",
+      "开始模拟",
+      "报告生成",
+      "深度互动"
+    ]
   },
   "step1": {
     "ontologyGeneration": "本体生成",
@@ -174,7 +180,12 @@
     "genderOther": "其他",
     "yearsOld": "岁",
     "initializing": "初始化",
-    "generating": "生成中"
+    "generating": "生成中",
+    "crowdTitle": "受众",
+    "crowdLabel": "额外受众人数",
+    "crowdHint": "除文档中的人物和机构外，MiroFish 将根据识别出的受众类型生成指定数量的普通参与者。0 表示不生成。建议 100–200（准备约 5–10 分钟）。",
+    "crowdCurrent": "当前：{count}",
+    "crowdApply": "重新生成含受众的 Agent"
   },
   "step3": {
     "startGenerateReport": "开始生成结果报告",
@@ -450,7 +461,10 @@
     "readingGraphEntities": "读取图谱实体",
     "generatingProfiles": "生成Agent人设",
     "generatingSimConfig": "生成模拟配置",
-    "preparingScripts": "准备模拟脚本"
+    "preparingScripts": "准备模拟脚本",
+    "planningCrowd": "正在规划 {count} 名受众...",
+    "generatingCrowd": "正在生成受众：{current}/{total}",
+    "crowdComplete": "完成，已添加受众 {count} 名"
   },
   "log": {
     "preparingGoBack": "准备返回 Step 2，正在关闭模拟...",
@@ -565,7 +579,8 @@
     "getReportInfoFailed": "获取报告信息失败: {error}",
     "enterStep": "进入 Step {step}: {name}",
     "returnToStep": "返回 Step {step}: {name}",
-    "customSimRounds": "自定义模拟轮数: {rounds} 轮"
+    "customSimRounds": "自定义模拟轮数: {rounds} 轮",
+    "reattachedToRunning": "服务器上的模拟正在运行，已重新连接（未重启）"
   },
   "report": {
     "taskStarted": "报告生成任务开始",

@@ -189,6 +189,25 @@
               </div>
             </div>
 
+            <!-- Extra audience members (crowd) -->
+            <div class="console-section">
+              <div class="console-header">
+                <span class="console-label">{{ $t('step2.crowdLabel') }}</span>
+              </div>
+              <div class="crowd-row">
+                <input
+                  v-model.number="crowdSize"
+                  type="number"
+                  min="0"
+                  max="1000"
+                  step="10"
+                  class="crowd-input"
+                  :disabled="loading"
+                />
+                <p class="crowd-hint">{{ $t('step2.crowdHint') }}</p>
+              </div>
+            </div>
+
             <!-- 启动按钮 -->
             <div class="console-section btn-section">
               <button 
@@ -212,7 +231,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import HistoryDatabase from '../components/HistoryDatabase.vue'
 import LanguageSwitcher from '../components/LanguageSwitcher.vue'
@@ -222,6 +241,25 @@ const router = useRouter()
 // 表单数据
 const formData = ref({
   simulationRequirement: ''
+})
+
+// Extra audience members, remembered per browser and read by Step 2.
+const readCrowdSize = () => {
+  try {
+    const saved = localStorage.getItem('crowdSize')
+    return saved === null ? 100 : Number(saved)
+  } catch {
+    return 100
+  }
+}
+const crowdSize = ref(readCrowdSize())
+watch(crowdSize, (value) => {
+  try {
+    const clamped = Math.max(0, Math.min(1000, Math.round(Number(value) || 0)))
+    localStorage.setItem('crowdSize', String(clamped))
+  } catch {
+    // storage unavailable: the server default is used instead
+  }
 })
 
 // 文件列表
@@ -812,6 +850,28 @@ const startSimulation = () => {
   resize: vertical;
   outline: none;
   min-height: 150px;
+}
+
+.crowd-row {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.crowd-input {
+  width: 110px;
+  padding: 10px 12px;
+  border: 1px solid #DDD;
+  font-family: var(--font-mono);
+  font-size: 1rem;
+  background: #FAFAFA;
+}
+
+.crowd-hint {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: #888;
 }
 
 .model-badge {

@@ -688,10 +688,47 @@ watch(() => props.systemLogs?.length, () => {
   })
 })
 
+// Opening Step 3 after a page refresh (or from a link) must not restart a
+// simulation that is already running: reattach to it, or show its result.
+const resumeOrStartSimulation = async () => {
+  const startKey = `startSimulation:${props.simulationId}`
+  let freshStart = false
+  try {
+    freshStart = sessionStorage.getItem(startKey) === '1'
+    sessionStorage.removeItem(startKey)
+  } catch {
+    freshStart = false
+  }
+  if (freshStart) {
+    return doStartSimulation()
+  }
+
+  let status = null
+  try {
+    const res = await getRunStatus(props.simulationId)
+    status = res.success && res.data ? res.data.runner_status : null
+  } catch {
+    status = null
+  }
+
+  if (['starting', 'running', 'paused', 'stopping'].includes(status)) {
+    addLog(t('log.reattachedToRunning'))
+    phase.value = 1
+    emit('update-status', 'processing')
+    startStatusPolling()
+    startDetailPolling()
+  } else if (['completed', 'stopped', 'failed'].includes(status)) {
+    await fetchRunStatus()
+    await fetchRunStatusDetail()
+  } else {
+    doStartSimulation()
+  }
+}
+
 onMounted(() => {
   addLog(t('log.step3Init'))
   if (props.simulationId) {
-    doStartSimulation()
+    resumeOrStartSimulation()
   }
 })
 

@@ -497,6 +497,11 @@ def prepare_simulation():
         entity_types_list = data.get('entity_types')
         use_llm_for_profiles = data.get('use_llm_for_profiles', True)
         parallel_profile_count = data.get('parallel_profile_count', 5)
+        crowd_size = data.get('crowd_size', Config.CROWD_SIZE)
+        try:
+            crowd_size = max(0, min(int(crowd_size), 1000))
+        except (TypeError, ValueError):
+            return jsonify({"success": False, "error": "crowd_size must be an integer 0-1000"}), 400
         
         # ========== 同步获取实体数量（在后台任务启动前） ==========
         # 这样前端在调用prepare后立即就能获取到预期Agent总数
@@ -617,7 +622,8 @@ def prepare_simulation():
                     defined_entity_types=entity_types_list,
                     use_llm_for_profiles=use_llm_for_profiles,
                     progress_callback=progress_callback,
-                    parallel_profile_count=parallel_profile_count
+                    parallel_profile_count=parallel_profile_count,
+                    crowd_size=crowd_size,
                 )
 
                 if result_state.status == SimulationStatus.FAILED:
@@ -654,7 +660,8 @@ def prepare_simulation():
                 "status": "preparing",
                 "message": t('api.prepareStarted'),
                 "already_prepared": False,
-                "expected_entities_count": state.entities_count,  # 预期的Agent总数
+                "expected_entities_count": state.entities_count + crowd_size,  # 预期的Agent总数（含受众）
+                "crowd_size": crowd_size,
                 "entity_types": state.entity_types  # 实体类型列表
             }
         })

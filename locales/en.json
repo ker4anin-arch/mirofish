@@ -75,7 +75,13 @@
     "layoutGraph": "Graph",
     "layoutSplit": "Split",
     "layoutWorkbench": "Workbench",
-    "stepNames": ["Graph Build", "Env Setup", "Run Simulation", "Report Generation", "Deep Interaction"]
+    "stepNames": [
+      "Graph Build",
+      "Env Setup",
+      "Run Simulation",
+      "Report Generation",
+      "Deep Interaction"
+    ]
   },
   "step1": {
     "ontologyGeneration": "Ontology Generation",
@@ -174,7 +180,12 @@
     "genderOther": "Other",
     "yearsOld": "years old",
     "initializing": "Initializing",
-    "generating": "Generating"
+    "generating": "Generating",
+    "crowdTitle": "Audience",
+    "crowdLabel": "Extra audience members",
+    "crowdHint": "Besides the people and organisations found in your documents, MiroFish will create this many ordinary participants based on the audience types it found. 0 = none. Recommended: 100–200 (~5–10 min of preparation).",
+    "crowdCurrent": "Current: {count}",
+    "crowdApply": "Regenerate agents with audience"
   },
   "step3": {
     "startGenerateReport": "Generate Report",
@@ -450,7 +461,10 @@
     "readingGraphEntities": "Reading Graph Entities",
     "generatingProfiles": "Generating Agent Profiles",
     "generatingSimConfig": "Generating Simulation Config",
-    "preparingScripts": "Preparing Scripts"
+    "preparingScripts": "Preparing Scripts",
+    "planningCrowd": "Planning an audience of {count} participants...",
+    "generatingCrowd": "Creating audience members: {current}/{total}",
+    "crowdComplete": "Done, audience members added: {count}"
   },
   "log": {
     "preparingGoBack": "Preparing to return to Step 2, closing simulation...",
@@ -565,7 +579,8 @@
     "getReportInfoFailed": "Failed to get report info: {error}",
     "enterStep": "Entering Step {step}: {name}",
     "returnToStep": "Returning to Step {step}: {name}",
-    "customSimRounds": "Custom simulation rounds: {rounds} rounds"
+    "customSimRounds": "Custom simulation rounds: {rounds} rounds",
+    "reattachedToRunning": "Simulation is already running on the server — reconnected without restarting"
   },
   "report": {
     "taskStarted": "Report generation task started",

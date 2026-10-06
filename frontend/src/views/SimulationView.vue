@@ -171,6 +171,14 @@ const handleNextStep = (params = {}) => {
     routeParams.query = { maxRounds: params.maxRounds }
   }
   
+  // Tell Step 3 this is a deliberate new run (a page refresh on Step 3 must
+  // reattach to the running simulation instead of restarting it).
+  try {
+    sessionStorage.setItem(`startSimulation:${currentSimulationId.value}`, '1')
+  } catch {
+    // without sessionStorage Step 3 falls back to reattach-or-start
+  }
+
   // 跳转到 Step 3 页面
   router.push(routeParams)
 }

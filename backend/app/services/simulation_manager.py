@@ -249,7 +249,8 @@ class SimulationManager:
         defined_entity_types: Optional[List[str]] = None,
         use_llm_for_profiles: bool = True,
         progress_callback: Optional[callable] = None,
-        parallel_profile_count: int = 3
+        parallel_profile_count: int = 3,
+        crowd_size: int = 0,
     ) -> SimulationState:
         """
         准备模拟环境（全程自动化）
@@ -269,6 +270,8 @@ class SimulationManager:
             use_llm_for_profiles: 是否使用LLM生成详细人设
             progress_callback: 进度回调函数 (stage, progress, message)
             parallel_profile_count: 并行生成人设的数量，默认3
+            crowd_size: number of extra audience members to generate on top
+                of the graph entities (see CrowdGenerator); 0 disables it
             
         Returns:
             SimulationState
@@ -364,6 +367,43 @@ class SimulationManager:
                 output_platform=realtime_platform  # 输出格式
             )
             
+            # Extra audience members beyond the entities named in the documents.
+            if crowd_size and crowd_size > 0:
+                from .crowd_generator import CrowdGenerator
+
+                if progress_callback:
+                    progress_callback(
+                        "generating_profiles", 0,
+                        t('progress.planningCrowd', count=crowd_size),
+                        current=len(profiles),
+                        total=len(profiles) + crowd_size
+                    )
+
+                def crowd_progress(current, total, segment_name):
+                    if progress_callback:
+                        progress_callback(
+                            "generating_profiles",
+                            int(current / max(total, 1) * 100),
+                            t('progress.generatingCrowd', current=current, total=total),
+                            current=len(profiles) + current,
+                            total=len(profiles) + total,
+                            item_name=segment_name
+                        )
+
+                crowd_profiles, crowd_entities = CrowdGenerator(generator).generate(
+                    simulation_requirement=simulation_requirement,
+                    entities=filtered.entities,
+                    total=crowd_size,
+                    start_user_id=len(profiles),
+                    parallel_count=parallel_profile_count,
+                    progress_callback=crowd_progress,
+                )
+                profiles = list(profiles) + crowd_profiles
+                # Agent ids are list positions: the config generator must see
+                # the crowd in the same order as the profiles.
+                filtered.entities = list(filtered.entities) + crowd_entities
+                logger.info(t('progress.crowdComplete', count=len(crowd_profiles)))
+
             state.profiles_count = len(profiles)
             state.profiles_generated = len(profiles) > 0
             self._save_simulation_state(state)
