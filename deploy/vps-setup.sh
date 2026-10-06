@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 # MiroFish one-command server setup (Ubuntu 22.04/24.04, run as root).
 #
-#   curl -fsSL https://raw.githubusercontent.com/ker4anin-arch/mirofish/claude/focused-knuth-3zzg2c/deploy/vps-setup.sh | bash
+#   export GITHUB_TOKEN=ghp_...   # only for a private repo: classic token, scopes repo + read:packages
+#   curl -fsSL -H "Authorization: token $GITHUB_TOKEN" \
+#     https://raw.githubusercontent.com/ker4anin-arch/mirofish/claude/focused-knuth-3zzg2c/deploy/vps-setup.sh | bash
 #
 # Re-running is safe: it updates the code and images and keeps your .env.
 # Optional environment overrides (otherwise you are asked):
 #   LLM_API_KEY, BASIC_AUTH_USER, BASIC_AUTH_PASSWORD, SITE_ADDRESS (domain or ":80")
+#   GITHUB_TOKEN (private repo / private images; also read from /root/.mirofish-github-token)
 set -euo pipefail
 
 REPO_URL="${REPO_URL:-https://github.com/ker4anin-arch/mirofish.git}"
@@ -55,13 +58,30 @@ if command -v ufw >/dev/null 2>&1; then
   ufw --force enable >/dev/null
 fi
 
+TOKEN_FILE=/root/.mirofish-github-token
+if [ -n "${GITHUB_TOKEN:-}" ]; then
+  # Remember it (root-only) so later updates work without exporting it again.
+  ( umask 077; printf '%s' "$GITHUB_TOKEN" > "$TOKEN_FILE" )
+elif [ -f "$TOKEN_FILE" ]; then
+  GITHUB_TOKEN="$(cat "$TOKEN_FILE")"
+fi
+GIT_AUTH=()
+if [ -n "${GITHUB_TOKEN:-}" ]; then
+  GIT_AUTH=(-c "http.https://github.com/.extraheader=Authorization: Basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)")
+  log "Logging in to GitHub Container Registry"
+  GHCR_USER="$(curl -fs -H "Authorization: token $GITHUB_TOKEN" https://api.github.com/user | grep -o '"login": *"[^"]*"' | cut -d'"' -f4)"
+  printf '%s' "$GITHUB_TOKEN" | docker login ghcr.io -u "${GHCR_USER:-token}" --password-stdin >/dev/null \
+    || die "GitHub token rejected by ghcr.io (needs the read:packages scope)"
+fi
+
 log "Fetching MiroFish ($BRANCH)"
 if [ -d "$APP_DIR/.git" ]; then
-  git -C "$APP_DIR" fetch -q origin "$BRANCH"
+  git "${GIT_AUTH[@]}" -C "$APP_DIR" fetch -q origin "$BRANCH"
   git -C "$APP_DIR" checkout -q "$BRANCH"
   git -C "$APP_DIR" reset -q --hard "origin/$BRANCH"
 else
-  git clone -q --branch "$BRANCH" "$REPO_URL" "$APP_DIR"
+  git "${GIT_AUTH[@]}" clone -q --branch "$BRANCH" "$REPO_URL" "$APP_DIR" \
+    || die "cannot clone $REPO_URL (private repo? set GITHUB_TOKEN)"
 fi
 cd "$APP_DIR"
 mkdir -p backend/uploads
