@@ -425,6 +425,16 @@ class SimulationRunner:
         # STARTING state makes every concurrent start fail closed.
         with cls._finalization_lock(simulation_id):
             existing = cls.get_run_state(simulation_id)
+            if existing and existing.runner_status == RunnerStatus.FAILED:
+                # A failed run keeps its stopped graph updater registered so
+                # the failure stays visible; a rerun is the explicit recovery.
+                # discard_inactive_updater refuses (raises) if it is still
+                # active, which keeps the start below fail-closed.
+                try:
+                    if ZepGraphMemoryManager.discard_inactive_updater(simulation_id):
+                        cls._graph_memory_enabled.pop(simulation_id, None)
+                except RuntimeError:
+                    pass
             active_statuses = {
                 RunnerStatus.STARTING,
                 RunnerStatus.RUNNING,
