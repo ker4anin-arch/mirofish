@@ -6,10 +6,7 @@ from app.utils.ontology import (
     normalize_ontology_attribute,
     normalize_ontology_attributes,
 )
-from zep_cloud.external_clients.ontology import (
-    edge_model_to_api_schema,
-    entity_model_to_api_schema,
-)
+from app.utils.graph_memory import ontology_to_graphiti, serialize_ontology
 
 
 def test_normalize_string_attribute():
@@ -99,7 +96,7 @@ def test_graph_builder_safety_net_accepts_strings_and_skips_invalid_values():
     assert set(speaker.__annotations__) == {"role", "entity_summary"}
 
 
-def test_graph_builder_emits_a_pinned_zep_sdk_compatible_schema():
+def test_graph_builder_emits_a_graphiti_compatible_ontology():
     captured = {}
 
     class GraphApi:
@@ -127,24 +124,25 @@ def test_graph_builder_emits_a_pinned_zep_sdk_compatible_schema():
 
     assert captured["graph_ids"] == ["graph-id"]
 
-    speaker = captured["entities"]["Speaker"]
-    entity_schema = entity_model_to_api_schema(speaker, "Speaker")
-    assert len(entity_schema["properties"]) == MAX_ONTOLOGY_ATTRIBUTES
-    assert entity_schema["properties"][0] == {
+    serialized = serialize_ontology(captured["entities"], captured["edges"])
+    entity_schema = serialized["entity_types"][0]
+    assert entity_schema["name"] == "Speaker"
+    assert len(entity_schema["attributes"]) == MAX_ONTOLOGY_ATTRIBUTES
+    assert entity_schema["attributes"][0] == {
         "name": "entity_graph_id",
-        "type": "Text",
         "description": "graph_id",
     }
 
-    mentions, source_targets = captured["edges"]["MENTIONS"]
-    edge_schema = edge_model_to_api_schema(mentions, "MENTIONS")
-    assert edge_schema["properties"] == [{
+    edge_schema = serialized["edge_types"][0]
+    assert edge_schema["attributes"] == [{
         "name": "details",
-        "type": "Text",
         "description": "Additional details about this ontology type.",
     }]
-    assert source_targets[0].source == "Speaker"
-    assert source_targets[0].target == "Speaker"
+    assert edge_schema["source_targets"] == [{"source": "Speaker", "target": "Speaker"}]
+
+    graphiti = ontology_to_graphiti(serialized)
+    assert set(graphiti.entity_types) == {"Speaker"}
+    assert graphiti.edge_type_map == {("Speaker", "Speaker"): ["MENTIONS"]}
 
 
 def test_graph_builder_passes_an_empty_entity_mapping_for_edge_only_ontology():

@@ -32,7 +32,15 @@ def main():
             print(f"  - {err}")
         print("\n请检查 .env 文件中的配置")
         sys.exit(1)
-    
+
+    # Connect to Neo4j early (also builds Graphiti indices and loads the
+    # embedding model) so a misconfigured graph store is reported at startup.
+    from app.utils.graph_memory import check_connection
+    try:
+        check_connection(timeout=300)
+    except Exception as e:
+        print(f"WARNING: knowledge graph store unavailable ({Config.NEO4J_URI}): {e}")
+
     # 创建应用
     app = create_app()
     

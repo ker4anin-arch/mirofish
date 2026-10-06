@@ -2,9 +2,9 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from zep_cloud.core.api_error import ApiError as ZepApiError
 
 from app.utils import zep
+from app.utils.zep import ZepApiError
 
 
 def test_permanent_zep_errors_fail_without_retry():
@@ -49,64 +49,31 @@ def test_rate_limit_retry_respects_retry_after():
     assert sleeps == [7.0]
 
 
-def test_zep_client_is_shared_and_uses_an_explicit_timeout(monkeypatch):
+def test_graph_client_is_shared_per_timeout(monkeypatch):
     created = []
 
-    def fake_zep(**kwargs):
+    def fake_client(**kwargs):
         created.append(kwargs)
         return SimpleNamespace(kwargs=kwargs)
 
-    monkeypatch.delenv("ZEP_API_URL", raising=False)
-    monkeypatch.setattr(zep, "Zep", fake_zep)
+    monkeypatch.setattr(zep, "GraphMemoryClient", fake_client)
     zep.clear_zep_client_cache()
 
-    first = zep.get_zep_client(" test-key ", timeout=12)
-    second = zep.get_zep_client("test-key", timeout=12)
+    first = zep.get_zep_client(timeout=12)
+    second = zep.get_zep_client("ignored-legacy-key", timeout=12)
 
     assert first is second
-    assert created == [{
-        "api_key": "test-key",
-        "base_url": zep.ZEP_CLOUD_BASE_URL,
-        "timeout": 12.0,
-    }]
+    assert created == [{"timeout": 12.0}]
     zep.clear_zep_client_cache()
 
 
-def test_zep_client_rejects_self_hosted_endpoint_override(monkeypatch):
-    monkeypatch.setenv("ZEP_API_URL", "https://example.invalid")
-
-    with pytest.raises(ValueError, match="ZEP_API_URL"):
-        zep.get_zep_client("test-key")
+def test_graph_client_rejects_non_positive_timeout():
+    with pytest.raises(ValueError):
+        zep.get_zep_client(timeout=0)
 
 
-def test_zep_client_uses_internal_timeout_and_ignores_env_overrides(monkeypatch):
-    created = []
+def test_neo4j_transient_errors_are_retryable():
+    from neo4j.exceptions import ServiceUnavailable
 
-    def fake_zep(**kwargs):
-        created.append(kwargs)
-        return SimpleNamespace(kwargs=kwargs)
-
-    monkeypatch.delenv("ZEP_API_URL", raising=False)
-    monkeypatch.setenv("ZEP_REQUEST_TIMEOUT_SECONDS", "1")
-    monkeypatch.setenv("ZEP_INGESTION_TIMEOUT_SECONDS", "1")
-    monkeypatch.setattr(zep, "Zep", fake_zep)
-    zep.clear_zep_client_cache()
-
-    zep.get_zep_client("test-key")
-
-    assert created == [{
-        "api_key": "test-key",
-        "base_url": zep.ZEP_CLOUD_BASE_URL,
-        "timeout": zep.ZEP_HTTP_REQUEST_TIMEOUT_SECONDS,
-    }]
-    assert zep.ZEP_HTTP_REQUEST_TIMEOUT_SECONDS == 60.0
-    assert zep.ZEP_INGESTION_WAIT_TIMEOUT_SECONDS == 600
-    zep.clear_zep_client_cache()
-
-
-def test_zep_timeout_policy_is_not_exposed_in_env_example():
-    env_example = Path(__file__).resolve().parents[2] / ".env.example"
-    contents = env_example.read_text(encoding="utf-8")
-
-    assert "ZEP_REQUEST_TIMEOUT_SECONDS" not in contents
-    assert "ZEP_INGESTION_TIMEOUT_SECONDS" not in contents
+    assert zep.is_retryable_zep_error(ServiceUnavailable("down"))
+    assert not zep.is_retryable_zep_error(ZepApiError("bad", status_code=400))

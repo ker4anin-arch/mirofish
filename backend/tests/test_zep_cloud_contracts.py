@@ -1,10 +1,7 @@
 from types import SimpleNamespace
-import json
 
-import httpx
 import pytest
-from zep_cloud import Zep
-from zep_cloud.core.api_error import ApiError as ZepApiError
+from app.utils.zep import ZepApiError
 
 from app.services import graph_builder as graph_builder_module
 from app.services.graph_builder import BatchSubmission, GraphBuilderService
@@ -431,71 +428,3 @@ def test_batch_wait_times_out_while_status_remains_nonterminal(monkeypatch):
             BatchSubmission("batch-1", "operation", [], 1),
             timeout=1,
         )
-
-
-def test_installed_sdk_serializes_the_batch_325_contract():
-    requests = []
-
-    def handler(request):
-        requests.append((request.method, request.url.path, request.content))
-        path = request.url.path
-        if path.endswith("/batches") and request.method == "POST":
-            return httpx.Response(
-                200,
-                json={"batch_id": "batch-1", "status": "draft", "item_count": 0},
-            )
-        if path.endswith("/batches/batch-1/items") and request.method == "POST":
-            return httpx.Response(200, json=[{
-                "item_id": "item-1",
-                "sequence_index": 0,
-                "status": "pending",
-                "episode_uuid": "episode-1",
-                "source_uuid": "episode-1",
-            }])
-        if path.endswith("/batches/batch-1/process"):
-            return httpx.Response(
-                200,
-                json={"batch_id": "batch-1", "status": "queued", "item_count": 1},
-            )
-        if path.endswith("/batches/batch-1"):
-            return httpx.Response(200, json={
-                "batch_id": "batch-1",
-                "status": "succeeded",
-                "item_count": 1,
-                "progress": {"percent_complete": 100, "succeeded_items": 1},
-            })
-        if path.endswith("/batches/batch-1/items") and request.method == "GET":
-            return httpx.Response(200, json={
-                "items": [{
-                    "item_id": "item-1",
-                    "sequence_index": 0,
-                    "status": "succeeded",
-                    "episode_uuid": "episode-1",
-                    "source_uuid": "episode-1",
-                }],
-                "next_cursor": None,
-            })
-        raise AssertionError(f"Unexpected request: {request.method} {path}")
-
-    with httpx.Client(transport=httpx.MockTransport(handler)) as transport_client:
-        builder = object.__new__(GraphBuilderService)
-        builder.client = Zep(api_key="test-key", httpx_client=transport_client)
-        submission = builder.add_text_batches("graph-id", ["source chunk"])
-        assert builder._wait_for_batch(submission, timeout=1) == ["episode-1"]
-
-    assert [(method, path) for method, path, _body in requests] == [
-        ("POST", "/api/v2/batches"),
-        ("POST", "/api/v2/batches/batch-1/items"),
-        ("POST", "/api/v2/batches/batch-1/process"),
-        ("GET", "/api/v2/batches/batch-1"),
-        ("GET", "/api/v2/batches/batch-1/items"),
-    ]
-    add_payload = json.loads(requests[1][2])
-    assert add_payload["items"][0] == {
-        "data": "source chunk",
-        "data_type": "text",
-        "graph_id": "graph-id",
-        "metadata": add_payload["items"][0]["metadata"],
-        "source_description": "MiroFish source document chunk",
-        "type": "graph_episode",
-    }

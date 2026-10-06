@@ -102,6 +102,7 @@ Click the image to watch MiroFish's deep prediction of the lost ending based on 
 | **Node.js** | 18+ | Frontend runtime, includes npm | `node -v` |
 | **Python** | ≥3.11, ≤3.12 | Backend runtime | `python --version` |
 | **uv** | Latest | Python package manager | `uv --version` |
+| **Neo4j** | 5.26+ | Knowledge graph store (Graphiti) | `docker run -d -p 7474:7474 -p 7687:7687 -e NEO4J_AUTH=neo4j/<password> neo4j:5.26` |
 
 #### 1. Configure Environment Variables
 
@@ -116,16 +117,21 @@ cp .env.example .env
 
 ```env
 # LLM API Configuration (supports any LLM API with OpenAI SDK format)
-# Recommended: Alibaba Qwen-plus model via Bailian Platform: https://bailian.console.aliyun.com/
 # High consumption, try simulations with fewer than 40 rounds first
 LLM_API_KEY=your_api_key
-LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
-LLM_MODEL_NAME=qwen-plus
+LLM_BASE_URL=https://api.deepseek.com/v1
+LLM_MODEL_NAME=deepseek-chat
 
-# Zep Cloud Configuration
-# Free monthly quota is sufficient for simple usage: https://app.getzep.com/
-ZEP_API_KEY=your_zep_api_key
+# Knowledge graph memory: self-hosted Graphiti + Neo4j (replaces Zep Cloud)
+NEO4J_URI=bolt://localhost:7687
+NEO4J_USER=neo4j
+NEO4J_PASSWORD=your_neo4j_password
 ```
+
+Embeddings run locally by default (a multilingual model is downloaded on first
+use). To use an embeddings API instead, set `EMBEDDING_API_KEY`,
+`EMBEDDING_BASE_URL` and `EMBEDDING_MODEL_NAME`. See `.env.example` for all
+graph options.
 
 #### 2. Install Dependencies
 
@@ -168,13 +174,13 @@ npm run frontend  # Start frontend only
 # 1. Configure environment variables (same as source deployment)
 cp .env.example .env
 
-# 2. Pull image and start
-docker compose up -d
+# 2. Build and start (MiroFish + Neo4j)
+docker compose up -d --build
 ```
 
-Reads `.env` from root directory by default, maps ports `3000 (frontend) / 5001 (backend)`
+Reads `.env` from root directory by default, maps ports `3000 (frontend) / 5001 (backend)`.
+Neo4j data is kept in the `neo4j_data` volume; its browser UI is on `http://localhost:7474`.
 
-> Mirror address for faster pulling is provided as comments in `docker-compose.yml`, replace if needed.
 
 ## 📬 Join the Conversation
 

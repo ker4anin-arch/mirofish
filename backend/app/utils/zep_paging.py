@@ -1,11 +1,11 @@
-"""Complete Zep Graph node/edge pagination using opaque response cursors."""
+"""Complete graph node/edge pagination using opaque response cursors."""
 
 from __future__ import annotations
 
 from collections.abc import Callable
 from typing import Any
 
-from zep_cloud.client import Zep
+from .graph_memory import GraphMemoryClient as Zep
 
 from .logger import get_logger
 from .zep import call_zep_read_with_retry

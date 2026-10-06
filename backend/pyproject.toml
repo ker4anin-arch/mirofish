@@ -16,8 +16,10 @@ dependencies = [
     # LLM 相关
     "openai>=1.0.0",
     
-    # Zep Cloud
-    "zep-cloud==3.25.0",
+    # Knowledge graph memory (self-hosted Graphiti + Neo4j)
+    "graphiti-core==0.30.2",
+    # Local embeddings when no embeddings API is configured
+    "fastembed>=0.7.0",
     "httpx>=0.27.0",
     
     # OASIS 社交媒体模拟
@@ -54,3 +56,8 @@ dev = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["app"]
+
+[tool.uv]
+# camel-oasis pins neo4j==5.23.0 but only uses the stable GraphDatabase API;
+# graphiti-core needs a newer driver.
+override-dependencies = ["neo4j>=5.26.0"]

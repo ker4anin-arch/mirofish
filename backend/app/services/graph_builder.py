@@ -10,9 +10,9 @@ import threading
 from typing import Dict, Any, List, Optional, Callable
 from dataclasses import dataclass
 
-from zep_cloud import BatchAddItem, EntityEdgeSourceTarget, NotFoundError
 
 from ..config import Config
+from ..utils.graph_memory import BatchAddItem, EntityEdgeSourceTarget
 from ..models.task import TaskManager, TaskStatus
 from ..utils.zep_paging import fetch_all_nodes, fetch_all_edges
 from ..utils.ontology import (
@@ -22,6 +22,7 @@ from ..utils.ontology import (
     normalize_ontology_source_targets,
 )
 from ..utils.zep import (
+    NotFoundError,
     ZEP_INGESTION_WAIT_TIMEOUT_SECONDS,
     call_zep_read_with_retry,
     get_zep_client,
@@ -50,7 +51,7 @@ class GraphInfo:
 
 @dataclass(frozen=True)
 class BatchSubmission:
-    """Durable identity for one Zep Batch API ingestion operation."""
+    """Durable identity for one batch ingestion operation."""
 
     batch_id: str
     operation_id: str
@@ -65,11 +66,7 @@ class GraphBuilderService:
     """
     
     def __init__(self, api_key: Optional[str] = None):
-        self.api_key = api_key or Config.ZEP_API_KEY
-        if not self.api_key:
-            raise ValueError("ZEP_API_KEY 未配置")
-        
-        self.client = get_zep_client(self.api_key)
+        self.client = get_zep_client()
         self.task_manager = TaskManager()
     
     def build_graph_async(
@@ -315,7 +312,7 @@ class GraphBuilderService:
         import warnings
         from typing import Optional
         from pydantic import Field
-        from zep_cloud.external_clients.ontology import EntityModel, EntityText, EdgeModel
+        from ..utils.graph_memory import EdgeModel, EntityModel, EntityText
         
         # 抑制 Pydantic v2 关于 Field(default=None) 的警告
         # 这是 Zep SDK 要求的用法，警告来自动态类创建，可以安全忽略

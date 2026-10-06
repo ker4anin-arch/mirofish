@@ -14,6 +14,9 @@ RESERVED_ONTOLOGY_ATTRIBUTE_NAMES = frozenset({
     "name_embedding",
     "summary",
     "created_at",
+    # Graphiti EntityNode fields
+    "labels",
+    "attributes",
 })
 
 _FALLBACK_ATTRIBUTE = {

@@ -1,86 +1,77 @@
-"""Shared Zep Cloud client, request limits, and retry policy."""
+"""Shared graph-memory client, request limits, and retry policy.
+
+The knowledge graph used to live in Zep Cloud. It is now self-hosted
+(Graphiti + Neo4j, see ``graph_memory.py``); the ``zep`` names are kept so the
+services that import these helpers did not need to change.
+"""
 
 from __future__ import annotations
 
-import os
 import time
 from functools import lru_cache
 from typing import Any, Callable, TypeVar
 
 import httpx
-from zep_cloud.client import Zep
-from zep_cloud.core.api_error import ApiError as ZepApiError
 
 from ..config import Config
+from .graph_memory import GraphMemoryClient, GraphMemoryError, NotFoundError
 from .logger import get_logger
 
 logger = get_logger("mirofish.zep")
 
 T = TypeVar("T")
 
-ZEP_CLOUD_BASE_URL = "https://api.getzep.com/api/v2"
-# Keep request behavior aligned with the zep-cloud 3.25.0 SDK default that
-# MiroFish used before introducing the shared client. This is an internal
-# integration policy, not a deployment setting users need to tune.
+ZepApiError = GraphMemoryError
+
 ZEP_HTTP_REQUEST_TIMEOUT_SECONDS = 60.0
-# Zep ingestion is asynchronous and may take several minutes. Preserve the
-# original GraphBuilder deadline while keeping it separate from HTTP timeout.
-ZEP_INGESTION_WAIT_TIMEOUT_SECONDS = 600
+# Self-hosted extraction runs one LLM pipeline per chunk, so a large document
+# can take a long time. Configurable through GRAPH_INGESTION_TIMEOUT_SECONDS.
+ZEP_INGESTION_WAIT_TIMEOUT_SECONDS = Config.GRAPH_INGESTION_TIMEOUT_SECONDS
 MAX_ZEP_SEARCH_QUERY_CHARS = 400
 MAX_ZEP_SEARCH_RESULTS = 50
 
 
 def normalize_zep_search_query(query: Any) -> str:
-    """Return a non-empty query within Zep Cloud's endpoint limit."""
+    """Return a non-empty, bounded search query."""
 
     if not isinstance(query, str):
-        raise ValueError("Zep search query must be a string")
+        raise ValueError("Graph search query must be a string")
     normalized = query.strip()
     if not normalized:
-        raise ValueError("Zep search query must not be empty")
+        raise ValueError("Graph search query must not be empty")
     return normalized[:MAX_ZEP_SEARCH_QUERY_CHARS]
 
 
 def normalize_zep_search_limit(limit: Any) -> int:
-    """Clamp a search result limit to the current Zep Cloud contract."""
+    """Clamp a search result limit."""
 
     try:
         normalized = int(limit)
     except (TypeError, ValueError) as exc:
-        raise ValueError("Zep search limit must be an integer") from exc
+        raise ValueError("Graph search limit must be an integer") from exc
     if normalized < 1:
-        raise ValueError("Zep search limit must be at least 1")
+        raise ValueError("Graph search limit must be at least 1")
     return min(normalized, MAX_ZEP_SEARCH_RESULTS)
 
 
 @lru_cache(maxsize=4)
-def _cached_zep_client(api_key: str, timeout: float) -> Zep:
-    return Zep(
-        api_key=api_key,
-        base_url=ZEP_CLOUD_BASE_URL,
-        timeout=timeout,
-    )
+def _cached_zep_client(timeout: float) -> GraphMemoryClient:
+    return GraphMemoryClient(timeout=timeout)
 
 
-def get_zep_client(api_key: str | None = None, timeout: float | None = None) -> Zep:
-    """Return a process-shared, explicitly configured Zep Cloud client."""
+def get_zep_client(api_key: str | None = None, timeout: float | None = None) -> GraphMemoryClient:
+    """Return the process-shared graph-memory client.
 
-    # zep-cloud gives ZEP_API_URL precedence even when base_url is explicit.
-    # Reject it so this Cloud-only integration cannot silently target a
-    # self-hosted or compatibility endpoint.
-    if os.environ.get("ZEP_API_URL"):
-        raise ValueError("ZEP_API_URL is unsupported; unset it to use Zep Cloud")
-
-    normalized_key = (api_key or Config.ZEP_API_KEY or "").strip()
-    if not normalized_key:
-        raise ValueError("ZEP_API_KEY 未配置")
+    ``api_key`` is accepted for backwards compatibility and ignored; Neo4j
+    credentials come from ``NEO4J_*`` settings.
+    """
 
     request_timeout = float(
         timeout if timeout is not None else ZEP_HTTP_REQUEST_TIMEOUT_SECONDS
     )
     if request_timeout <= 0:
-        raise ValueError("Zep request timeout must be greater than 0")
-    return _cached_zep_client(normalized_key, request_timeout)
+        raise ValueError("Graph request timeout must be greater than 0")
+    return _cached_zep_client(request_timeout)
 
 
 def clear_zep_client_cache() -> None:
@@ -96,6 +87,13 @@ def is_retryable_zep_error(error: BaseException) -> bool:
         return True
     if isinstance(error, (ConnectionError, TimeoutError, OSError)):
         return True
+    try:
+        from neo4j.exceptions import ServiceUnavailable, SessionExpired, TransientError
+    except ImportError:  # pragma: no cover
+        pass
+    else:
+        if isinstance(error, (ServiceUnavailable, SessionExpired, TransientError)):
+            return True
     if isinstance(error, ZepApiError):
         status_code = error.status_code
         return status_code in {408, 429} or (
@@ -132,7 +130,7 @@ def call_zep_read_with_retry(
     max_delay: float = 60.0,
     sleep: Callable[[float], None] = time.sleep,
 ) -> T:
-    """Retry a safe Zep read only for transport, 408, 429, or 5xx errors."""
+    """Retry a safe graph read only for transport, 408, 429, or 5xx errors."""
 
     if max_attempts < 1:
         raise ValueError("max_attempts must be at least 1")

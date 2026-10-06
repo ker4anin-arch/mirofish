@@ -29,8 +29,31 @@ class Config:
     LLM_BASE_URL = os.environ.get('LLM_BASE_URL', 'https://api.openai.com/v1')
     LLM_MODEL_NAME = os.environ.get('LLM_MODEL_NAME', 'gpt-4o-mini')
     
-    # Zep配置
-    ZEP_API_KEY = os.environ.get('ZEP_API_KEY')
+    # Knowledge graph memory (Graphiti + Neo4j, replaces Zep Cloud)
+    NEO4J_URI = os.environ.get('NEO4J_URI', 'bolt://localhost:7687')
+    NEO4J_USER = os.environ.get('NEO4J_USER', 'neo4j')
+    NEO4J_PASSWORD = os.environ.get('NEO4J_PASSWORD')
+    NEO4J_DATABASE = os.environ.get('NEO4J_DATABASE', 'neo4j')
+
+    # LLM used for graph extraction (defaults to LLM_MODEL_NAME). DeepSeek and
+    # most OpenAI-compatible providers need 'json_object'; use 'json_schema'
+    # only for providers with native structured outputs.
+    GRAPH_LLM_MODEL_NAME = os.environ.get('GRAPH_LLM_MODEL_NAME')
+    GRAPH_LLM_MAX_TOKENS = int(os.environ.get('GRAPH_LLM_MAX_TOKENS', '8192'))
+    GRAPH_LLM_STRUCTURED_OUTPUT = os.environ.get('GRAPH_LLM_STRUCTURED_OUTPUT', 'json_object')
+    GRAPH_MAX_COROUTINES = int(os.environ.get('GRAPH_MAX_COROUTINES', '8'))
+    GRAPH_INGESTION_TIMEOUT_SECONDS = int(os.environ.get('GRAPH_INGESTION_TIMEOUT_SECONDS', '7200'))
+
+    # Embeddings: any OpenAI-compatible endpoint, or a local model when
+    # EMBEDDING_API_KEY is empty (DeepSeek has no embeddings API).
+    EMBEDDING_API_KEY = os.environ.get('EMBEDDING_API_KEY')
+    EMBEDDING_BASE_URL = os.environ.get('EMBEDDING_BASE_URL', 'https://api.openai.com/v1')
+    EMBEDDING_MODEL_NAME = os.environ.get(
+        'EMBEDDING_MODEL_NAME',
+        'text-embedding-3-small' if os.environ.get('EMBEDDING_API_KEY')
+        else 'sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2',
+    )
+    EMBEDDING_DIM = int(os.environ.get('EMBEDDING_DIM', '1024'))
     
     # 文件上传配置
     MAX_CONTENT_LENGTH = 50 * 1024 * 1024  # 50MB
@@ -66,10 +89,8 @@ class Config:
         errors: list[str] = []
         if not cls.LLM_API_KEY:
             errors.append("LLM_API_KEY 未配置")
-        if not cls.ZEP_API_KEY:
-            errors.append("ZEP_API_KEY 未配置")
-        if os.environ.get("ZEP_API_URL"):
-            errors.append("ZEP_API_URL 不受支持；MiroFish 仅连接 Zep Cloud")
+        if not cls.NEO4J_PASSWORD:
+            errors.append("NEO4J_PASSWORD 未配置")
         if cls.DEBUG:
             import warnings
             warnings.warn("Flask DEBUG mode is enabled. Do not use in production.", RuntimeWarning)
