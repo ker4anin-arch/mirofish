@@ -98,6 +98,14 @@ class BadRequestError(GraphMemoryError):
         super().__init__(message, status_code=400)
 
 
+class EpisodeIngestionFailed(GraphMemoryError):
+    """Extraction failed for one episode (e.g. the LLM returned bad output).
+
+    The episode is final and will not be retried; callers can treat it as a
+    lost data point rather than an infrastructure failure.
+    """
+
+
 # ---------------------------------------------------------------------------
 # Ontology model base classes (replacement for zep_cloud.external_clients.ontology)
 # ---------------------------------------------------------------------------
@@ -848,7 +856,7 @@ class _EpisodeNamespace(_Base):
             status, error_message = state
         if status == "failed":
             # Surface ingestion failures instead of letting pollers spin forever.
-            raise GraphMemoryError(f"episode {uuid_} ingestion failed: {error_message}")
+            raise EpisodeIngestionFailed(f"episode {uuid_} ingestion failed: {error_message}")
         return EpisodeRecord(
             uuid_=uuid_,
             processed=status == "succeeded",

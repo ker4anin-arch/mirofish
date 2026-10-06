@@ -13,6 +13,7 @@ from queue import Queue, Empty
 from ..config import Config
 from ..utils.logger import get_logger
 from ..utils.locale import get_locale, set_locale
+from ..utils.graph_memory import EpisodeIngestionFailed
 from ..utils.zep import (
     ZEP_INGESTION_WAIT_TIMEOUT_SECONDS,
     call_zep_read_with_retry,
@@ -278,6 +279,7 @@ class ZepGraphMemoryUpdater:
         self._total_activities = 0  # 实际添加到队列的活动数
         self._total_sent = 0        # 成功发送到Zep的批次数
         self._total_items_sent = 0  # 成功发送到Zep的活动条数
+        self._failed_episode_count = 0  # episodes whose extraction failed
         self._failed_count = 0      # 发送失败的批次数
         self._skipped_count = 0     # 被过滤跳过的活动数（DO_NOTHING）
         self._failed_batches: List[Dict[str, Any]] = []
@@ -329,13 +331,27 @@ class ZepGraphMemoryUpdater:
         # worker but not yet buffered.
         self._flush_remaining(deadline=deadline)
 
+        # Lost data points (a write or an LLM extraction that failed) are
+        # reported but must not block the run and its report: a few missing
+        # activities only make the graph memory slightly less complete.
+        # Timeouts above and below still raise, because writes may still be in
+        # flight and a report would race them.
         if self._failed_batches:
-            raise RuntimeError(
-                f"{len(self._failed_batches)} Zep activity batch(es) failed; "
-                "simulation graph ingestion is incomplete"
+            logger.warning(
+                "%s graph memory batch(es) could not be written for %s; "
+                "continuing without them",
+                len(self._failed_batches),
+                self.simulation_id,
             )
 
         self._wait_for_pending_episodes(deadline=deadline)
+        if self._failed_episode_count:
+            logger.warning(
+                "%s graph memory episode(s) failed extraction for %s; "
+                "continuing without them",
+                self._failed_episode_count,
+                self.simulation_id,
+            )
         
         logger.info(f"ZepGraphMemoryUpdater 已停止: graph_id={self.graph_id}, "
                    f"total_activities={self._total_activities}, "
@@ -607,10 +623,16 @@ class ZepGraphMemoryUpdater:
                     "episode(s) pending"
                 )
             for episode_uuid in list(pending):
-                episode = call_zep_read_with_retry(
-                    lambda: self.client.graph.episode.get(uuid_=episode_uuid),
-                    operation_name=f"poll simulation episode {episode_uuid}",
-                )
+                try:
+                    episode = call_zep_read_with_retry(
+                        lambda: self.client.graph.episode.get(uuid_=episode_uuid),
+                        operation_name=f"poll simulation episode {episode_uuid}",
+                    )
+                except EpisodeIngestionFailed as error:
+                    logger.warning("Skipping failed graph memory episode: %s", error)
+                    self._failed_episode_count += 1
+                    pending.remove(episode_uuid)
+                    continue
                 if getattr(episode, "processed", False):
                     pending.remove(episode_uuid)
             if pending:
@@ -629,6 +651,7 @@ class ZepGraphMemoryUpdater:
             "batches_sent": self._total_sent,            # 成功发送的批次数
             "items_sent": self._total_items_sent,        # 成功发送的活动条数
             "failed_count": self._failed_count,          # 发送失败的批次数
+            "failed_episodes": self._failed_episode_count,  # LLM extraction failures
             "pending_episode_count": len(self._pending_episode_uuids),
             "skipped_count": self._skipped_count,        # 被过滤跳过的活动数（DO_NOTHING）
             "queue_size": self._activity_queue.qsize(),

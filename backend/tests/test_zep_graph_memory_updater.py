@@ -106,7 +106,7 @@ def test_activity_episode_has_provenance_time_and_a_safe_size(monkeypatch):
     assert write["metadata"]["activity_count"] == 1
 
 
-def test_failed_non_idempotent_write_is_reported_by_stop(monkeypatch):
+def test_failed_non_idempotent_write_is_reported_but_does_not_block_stop(monkeypatch):
     def add(**_kwargs):
         raise RuntimeError("write failed")
 
@@ -114,10 +114,33 @@ def test_failed_non_idempotent_write_is_reported_by_stop(monkeypatch):
     updater.start()
     updater.add_activity(_activity())
 
-    with pytest.raises(RuntimeError, match="ingestion is incomplete"):
-        updater.stop()
+    # A lost write is not replayed (it is not idempotent) and no longer fails
+    # the run: it is counted and the run can still produce a report.
+    updater.stop()
 
     assert updater.get_stats()["failed_count"] == 1
+
+
+def test_failed_episode_extraction_is_skipped_on_stop(monkeypatch):
+    from app.utils.graph_memory import EpisodeIngestionFailed
+
+    updater = _updater(
+        monkeypatch,
+        lambda **_kwargs: SimpleNamespace(uuid_="episode-1"),
+    )
+
+    def failed_episode(**_kwargs):
+        raise EpisodeIngestionFailed("episode episode-1 ingestion failed: EmptyResponseError")
+
+    updater.client.graph.episode.get = failed_episode
+    updater.start()
+    updater.add_activity(_activity())
+
+    updater.stop()
+
+    stats = updater.get_stats()
+    assert stats["failed_episodes"] == 1
+    assert stats["pending_episode_count"] == 0
 
 
 def test_failed_simulation_action_is_not_ingested(monkeypatch):
