@@ -44,7 +44,9 @@ class Config:
     # most OpenAI-compatible providers need 'json_object'; use 'json_schema'
     # only for providers with native structured outputs.
     GRAPH_LLM_MODEL_NAME = os.environ.get('GRAPH_LLM_MODEL_NAME')
-    GRAPH_LLM_MAX_TOKENS = int(os.environ.get('GRAPH_LLM_MAX_TOKENS', '8192'))
+    # Reasoning models (deepseek-flash) spend part of this budget on hidden
+    # reasoning; 8192 truncated long Russian summaries mid-JSON.
+    GRAPH_LLM_MAX_TOKENS = int(os.environ.get('GRAPH_LLM_MAX_TOKENS', '32768'))
     GRAPH_LLM_STRUCTURED_OUTPUT = os.environ.get('GRAPH_LLM_STRUCTURED_OUTPUT', 'json_object')
     GRAPH_MAX_COROUTINES = int(os.environ.get('GRAPH_MAX_COROUTINES', '8'))
     GRAPH_INGESTION_TIMEOUT_SECONDS = int(os.environ.get('GRAPH_INGESTION_TIMEOUT_SECONDS', '7200'))
