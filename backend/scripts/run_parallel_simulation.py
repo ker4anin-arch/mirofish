@@ -630,6 +630,30 @@ ACTION_TYPE_MAP = {
 }
 
 
+def _twitter_platform(db_path: str):
+    """Twitter platform with a configurable feed recommender.
+
+    OASIS defaults to "twhin-bert", which runs a BERT model over every post and
+    user each round: ~3 GB RAM and tens of minutes per round on a small CPU
+    server with ~100+ agents. "random" (no model) is the default here; set
+    TWITTER_RECSYS=twhin-bert on a large server to restore OASIS behaviour.
+    Other parameters match oasis.DefaultPlatformType.TWITTER.
+    """
+    recsys = os.environ.get("TWITTER_RECSYS", "random").strip() or "random"
+    if recsys == "twhin-bert":
+        return oasis.DefaultPlatformType.TWITTER
+    from oasis.social_platform.channel import Channel
+
+    return oasis.Platform(
+        db_path=db_path,
+        channel=Channel(),
+        recsys_type=recsys,
+        refresh_rec_post_count=2,
+        max_rec_post_len=2,
+        following_post_count=3,
+    )
+
+
 def get_agent_names_from_config(config: Dict[str, Any]) -> Dict[int, str]:
     """
     从 simulation_config 中获取 agent_id -> entity_name 的映射
@@ -1154,7 +1178,7 @@ async def run_twitter_simulation(
     
     result.env = oasis.make(
         agent_graph=result.agent_graph,
-        platform=oasis.DefaultPlatformType.TWITTER,
+        platform=_twitter_platform(db_path),
         database_path=db_path,
         semaphore=30,  # 限制最大并发 LLM 请求数，防止 API 过载
     )

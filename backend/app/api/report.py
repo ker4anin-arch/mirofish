@@ -104,7 +104,25 @@ def generate_report():
             RunnerStatus.COMPLETED,
             RunnerStatus.STOPPED,
         }
-        if (
+        # A run that died part-way (e.g. the process was killed for lack of
+        # memory) still has every round it finished; report on those.
+        partial_run = (
+            run_state is not None
+            and run_state.runner_status == RunnerStatus.FAILED
+            and (getattr(run_state, "current_round", 0) or 0) > 0
+            and (getattr(run_state, "twitter_actions_count", 0) or 0)
+            + (getattr(run_state, "reddit_actions_count", 0) or 0) > 0
+        )
+        if partial_run:
+            logger.warning(
+                "Generating a report for a partially completed simulation %s "
+                "(%s/%s rounds): %s",
+                simulation_id,
+                getattr(run_state, "current_round", None),
+                getattr(run_state, "total_rounds", None),
+                getattr(run_state, "error", None),
+            )
+        if not partial_run and (
             run_state is None
             or run_state.runner_status not in successful_terminal_statuses
         ):
