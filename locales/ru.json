@@ -216,7 +216,9 @@
     "forceStopSuccess": "Симуляция принудительно остановлена",
     "forceStopFailed": "Принудительная остановка не удалась: {error}",
     "startGenerateReportBtn": "Создать отчёт",
-    "generatingReportBtn": "Запуск..."
+    "generatingReportBtn": "Запуск...",
+    "stopBtn": "Стоп",
+    "stoppingBtn": "Останавливаем…"
   },
   "step4": {
     "generatingSection": "Пишем раздел «{title}»...",
@@ -580,7 +582,8 @@
     "enterStep": "Переход к шагу {step}: {name}",
     "returnToStep": "Возврат к шагу {step}: {name}",
     "customSimRounds": "Количество раундов вручную: {rounds}",
-    "reattachedToRunning": "Симуляция уже идёт на сервере — подключились к ней без перезапуска"
+    "reattachedToRunning": "Симуляция уже идёт на сервере — подключились к ней без перезапуска",
+    "autoStopping": "Все раунды пройдены — останавливаем симуляцию и дописываем память графа, затем станет доступен отчёт..."
   },
   "report": {
     "taskStarted": "Создание отчёта запущено",

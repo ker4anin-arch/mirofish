@@ -216,7 +216,9 @@
     "forceStopSuccess": "Simulation force stopped",
     "forceStopFailed": "Force stop failed: {error}",
     "startGenerateReportBtn": "Generate Report",
-    "generatingReportBtn": "Starting..."
+    "generatingReportBtn": "Starting...",
+    "stopBtn": "Stop",
+    "stoppingBtn": "Stopping…"
   },
   "step4": {
     "generatingSection": "Generating {title}...",
@@ -580,7 +582,8 @@
     "enterStep": "Entering Step {step}: {name}",
     "returnToStep": "Returning to Step {step}: {name}",
     "customSimRounds": "Custom simulation rounds: {rounds} rounds",
-    "reattachedToRunning": "Simulation is already running on the server — reconnected without restarting"
+    "reattachedToRunning": "Simulation is already running on the server — reconnected without restarting",
+    "autoStopping": "All rounds finished — stopping the simulation and flushing graph memory; the report becomes available next..."
   },
   "report": {
     "taskStarted": "Report generation task started",

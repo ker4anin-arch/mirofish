@@ -91,6 +91,14 @@
       </div>
 
       <div class="action-controls">
+        <button
+          v-if="phase === 1"
+          class="action-btn"
+          :disabled="stopRequested"
+          @click="requestStop"
+        >
+          {{ stopRequested ? $t('step3.stoppingBtn') : $t('step3.stopBtn') }}
+        </button>
         <button 
           class="action-btn primary"
           :disabled="phase !== 2 || isGeneratingReport"
@@ -376,6 +384,7 @@ const resetAllState = () => {
   startError.value = null
   isStarting.value = false
   isStopping.value = false
+  stopRequested.value = false
   stopPolling()  // 停止之前可能存在的轮询
 }
 
@@ -434,6 +443,23 @@ const doStartSimulation = async () => {
     emit('update-status', 'error')
   } finally {
     isStarting.value = false
+  }
+}
+
+// Ask the backend to stop and keep polling: the run passes through
+// "stopping" while graph memory drains, and fetchRunStatus switches to the
+// finished phase (enabling the report) once it is stopped/completed.
+const stopRequested = ref(false)
+const requestStop = async () => {
+  if (!props.simulationId || stopRequested.value) return
+  stopRequested.value = true
+  addLog(t('log.stoppingSim'))
+  try {
+    await stopSimulation({ simulation_id: props.simulationId })
+  } catch (err) {
+    // 202 "still stopping" is surfaced as an error by the API client; the
+    // status polling below reports the real outcome either way.
+    console.warn('stop request:', err.message)
   }
 }
 
@@ -515,6 +541,14 @@ const fetchRunStatus = async () => {
       const isCompleted = data.runner_status === 'completed' || data.runner_status === 'stopped'
       const isFailed = data.runner_status === 'failed'
       
+      // After the last round OASIS keeps the run alive for interviews; the
+      // report needs a terminal state, so stop it automatically once.
+      if (data.runner_status === 'running' && checkPlatformsCompleted(data) && !stopRequested.value) {
+        addLog(t('log.allPlatformsCompleted'))
+        addLog(t('log.autoStopping'))
+        requestStop()
+      }
+
       // runner_status is authoritative because the backend only publishes a
       // terminal state after the Zep ingestion barrier has completed.
       if (isFailed) {

@@ -216,7 +216,9 @@
     "forceStopSuccess": "模拟已强制停止",
     "forceStopFailed": "强制停止失败: {error}",
     "startGenerateReportBtn": "开始生成结果报告",
-    "generatingReportBtn": "启动中..."
+    "generatingReportBtn": "启动中...",
+    "stopBtn": "停止",
+    "stoppingBtn": "正在停止…"
   },
   "step4": {
     "generatingSection": "正在生成{title}...",
@@ -580,7 +582,8 @@
     "enterStep": "进入 Step {step}: {name}",
     "returnToStep": "返回 Step {step}: {name}",
     "customSimRounds": "自定义模拟轮数: {rounds} 轮",
-    "reattachedToRunning": "服务器上的模拟正在运行，已重新连接（未重启）"
+    "reattachedToRunning": "服务器上的模拟正在运行，已重新连接（未重启）",
+    "autoStopping": "所有轮次已完成——正在停止模拟并写入图谱记忆，随后即可生成报告..."
   },
   "report": {
     "taskStarted": "报告生成任务开始",
