@@ -98,7 +98,7 @@ def list_tests(limit: int = 50) -> List[Dict[str, Any]]:
         meta = _read_json(os.path.join(BANNER_TESTS_DIR, name, "meta.json"))
         if meta:
             metas.append({k: meta.get(k) for k in (
-                "test_id", "title", "status", "progress", "created_at", "banner_count", "panel_size"
+                "test_id", "mode", "title", "status", "progress", "created_at", "banner_count", "panel_size"
             )})
     metas.sort(key=lambda m: m.get("created_at") or "", reverse=True)
     return metas[:limit]

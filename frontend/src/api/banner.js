@@ -14,3 +14,6 @@ export const getBannerAnswers = (testId) => service.get(`/api/banner-test/${test
 
 export const bannerImageUrl = (testId, label) =>
   `${service.defaults.baseURL || ''}/api/banner-test/${testId}/image/${label}`
+
+export const landingScreenUrl = (testId, label, n) =>
+  `${service.defaults.baseURL || ''}/api/banner-test/${testId}/screen/${label}/${n}`

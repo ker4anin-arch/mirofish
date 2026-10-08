@@ -15,7 +15,7 @@ import tempfile
 from flask import jsonify, request, send_file
 
 from . import banner_bp
-from ..services import banner_test
+from ..services import banner_test, landing_test
 from ..utils.file_parser import FileParser
 from ..utils.logger import get_logger
 
@@ -65,15 +65,27 @@ def create_banner_test():
         except ValueError:
             return jsonify({"success": False, "error": "panel_size должен быть числом"}), 400
 
-        test_id = banner_test.create_test(
-            title=request.form.get("title") or "",
-            goal=request.form.get("goal") or "",
-            placement=request.form.get("placement") or "other",
-            panel_size=panel_size,
-            audience_text=audience_text,
-            banners=banners,
-        )
-        banner_test.start_test(test_id)
+        if (request.form.get("mode") or "banner") == "landing":
+            test_id = landing_test.create_test(
+                title=request.form.get("title") or "",
+                goal=request.form.get("goal") or "",
+                placement=request.form.get("placement") or "other",
+                device=request.form.get("device") or "desktop",
+                panel_size=panel_size,
+                audience_text=audience_text,
+                pages=banners,
+            )
+            landing_test.start_test(test_id)
+        else:
+            test_id = banner_test.create_test(
+                title=request.form.get("title") or "",
+                goal=request.form.get("goal") or "",
+                placement=request.form.get("placement") or "other",
+                panel_size=panel_size,
+                audience_text=audience_text,
+                banners=banners,
+            )
+            banner_test.start_test(test_id)
         return jsonify({"success": True, "data": {"test_id": test_id}})
     except ValueError as error:
         return jsonify({"success": False, "error": str(error)}), 400
@@ -117,6 +129,19 @@ def get_banner_image(test_id, label):
     if not banner:
         return jsonify({"success": False, "error": "Баннер не найден"}), 404
     return send_file(os.path.join(banner_test._test_dir(test_id), banner["file"]), mimetype="image/png")
+
+
+@banner_bp.route("/<test_id>/screen/<label>/<int:number>", methods=["GET"])
+def get_landing_screen(test_id, label, number):
+    try:
+        meta = banner_test.load_meta(test_id)
+    except ValueError:
+        meta = None
+    variant = next((b for b in (meta or {}).get("banners", []) if b["label"] == label), None)
+    screens = (variant or {}).get("screens") or []
+    if not 1 <= number <= len(screens):
+        return jsonify({"success": False, "error": "Экран не найден"}), 404
+    return send_file(os.path.join(banner_test._test_dir(test_id), screens[number - 1]), mimetype="image/png")
 
 
 @banner_bp.route("/<test_id>/answers", methods=["GET"])
