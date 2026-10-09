@@ -29,13 +29,22 @@ from typing import Any, Dict, List, Optional
 
 from ..utils.locale import get_language_instruction, get_locale, set_locale
 from ..utils.logger import get_logger
-from . import banner_test
-from .banner_test import BannerTestRunner, PLACEMENTS, _read_json, _test_dir, _write_json, load_meta, save_meta
+from . import banner_test, semantic_scale
+from .banner_test import (
+    BannerTestRunner, PLACEMENTS, SSR_REPORT_NOTE, _read_json, _test_dir, _write_json,
+    attitude_line, load_meta, rank, save_meta,
+)
 
 logger = get_logger("mirofish.landing_test")
 
 MAX_VARIANTS = 3
 MAX_SCREENS = 10
+# Free-text answers scored by semantic similarity: {name: (anchor scale, text field)}.
+SSR_FIELDS = {
+    "would_apply": ("apply", "apply_thoughts"),
+    "trust": ("trust", "trust_thoughts"),
+}
+
 DEVICES = {
     # width the page is scaled to, and screen height for that width
     "desktop": {"width": 1280, "screen_height": 800, "label": "компьютер (браузер на десктопе)"},
@@ -172,14 +181,15 @@ class LandingTestRunner(BannerTestRunner):
         )
         prompt = f"""Кто ты:
 {person['persona']}
-
+{attitude_line(person)}
 Ситуация: ты увидел рекламу ({meta['placement_text']}) и перешёл на страницу. Устройство: {meta['device_text']}.
 Что предлагают по задумке автора: {meta.get('goal') or 'не указано'} (ты этого заранее не знаешь — суди по странице).
 Ниже {total} экранов страницы по порядку, как ты бы их пролистывал (экран 1 — то, что видно сразу).
 Первый экран оцени так, будто смотришь на него 3–5 секунд. Если в какой-то момент ты бы ушёл —
-укажи этот экран в "stopped_at", а экраны после него не оценивай.
+укажи этот экран в "stopped_at", а экраны после него не оценивай. Уйти быстро или остаться
+равнодушным — нормально, так поступает большинство посетителей.
 
-Верни JSON:
+Верни JSON (поля *_thoughts — своими словами, честно, 1–2 фразы, без цифр):
 {{
   "first_screen": {{
     "understood": true или false — понял ли за 5 секунд, что предлагают,
@@ -193,6 +203,8 @@ class LandingTestRunner(BannerTestRunner):
   ],
   "stopped_at": номер экрана, на котором ушёл бы, или null — если дочитал до конца,
   "stop_reason": "почему ушёл (или пусто)",
+  "apply_thoughts": "оставил бы ты заявку (совершил целевое действие) — и почему",
+  "trust_thoughts": "веришь ли ты этой странице и компании — и почему",
   "trust": 1-5,
   "would_apply": 1-5 (оставил бы заявку / совершил целевое действие),
   "decision_reason": "главная причина решения в 1-2 фразах",
@@ -251,8 +263,9 @@ class LandingTestRunner(BannerTestRunner):
             samples.append({
                 "variant": f"{variant['label']} ({variant['name']}, экранов: {len(variant['screens'])})",
                 "answers": [
-                    {k: row[k] for k in ("segment", "offer_in_own_words", "stopped_at", "stop_reason",
-                                         "would_apply", "decision_reason", "screen_notes", "objections", "suggestions")}
+                    {k: row.get(k) for k in ("segment", "offer_in_own_words", "stopped_at", "stop_reason",
+                                             "ssr_would_apply", "would_apply", "apply_thoughts", "decision_reason",
+                                             "screen_notes", "objections", "suggestions")}
                     for row in picked
                 ],
             })
@@ -263,6 +276,8 @@ class LandingTestRunner(BannerTestRunner):
 Посчитанные метрики (reach — доля дошедших до экрана; convincing — средняя убедительность экрана 1-5;
 would_apply — намерение оставить заявку 1-5), общие и по сегментам:
 {json.dumps(stats, ensure_ascii=False)}
+
+{SSR_REPORT_NOTE}
 
 Выборка ответов участников (screen_notes — впечатления по экранам):
 {json.dumps(samples, ensure_ascii=False)}
@@ -294,6 +309,8 @@ would_apply — намерение оставить заявку 1-5), общи�
             answers = self._collect_answers(meta, panel)
             if not answers:
                 raise RuntimeError("модель не вернула ни одного ответа")
+            self._update(progress=86, message="Переводим ответы в шкалы...")
+            self._apply_semantic_scales(answers, SSR_FIELDS)
             self._update(progress=88, message="Считаем метрики и пишем отчёт...")
             screen_counts = {v["label"]: len(v["screens"]) for v in meta["banners"]}
             stats = aggregate(answers, [v["label"] for v in meta["banners"]], screen_counts)
@@ -379,6 +396,8 @@ def normalize_answer(data: Dict[str, Any], person: Dict[str, Any], label: str, t
         "trust": _score(data.get("trust")),
         "would_apply": _score(data.get("would_apply")),
         "decision_reason": str(data.get("decision_reason") or "")[:400],
+        "apply_thoughts": str(data.get("apply_thoughts") or "")[:500],
+        "trust_thoughts": str(data.get("trust_thoughts") or "")[:500],
         "objections": as_list(data.get("objections")),
         "suggestions": as_list(data.get("suggestions")),
     }
@@ -405,7 +424,7 @@ def _summarize(rows: List[Dict[str, Any]], screens: int) -> Dict[str, Any]:
         reach.append(_pct(reached, n))
         convincing.append(_mean([r.get("screen_scores", {}).get(str(number)) for r in rows]))
     applies = [r.get("would_apply") for r in rows if isinstance(r.get("would_apply"), int)]
-    return {
+    summary = {
         "n": n,
         "would_apply": _mean([r.get("would_apply") for r in rows]),
         "apply_pct": _pct(sum(1 for v in applies if v >= 4), len(applies)),
@@ -417,6 +436,9 @@ def _summarize(rows: List[Dict[str, Any]], screens: int) -> Dict[str, Any]:
         "reach": reach,
         "convincing": convincing,
     }
+    for name in SSR_FIELDS:
+        summary.update(semantic_scale.summarize(rows, name))
+    return summary
 
 
 def aggregate(answers: List[Dict[str, Any]], labels: List[str], screen_counts: Dict[str, int]) -> Dict[str, Any]:
@@ -439,9 +461,4 @@ def aggregate(answers: List[Dict[str, Any]], labels: List[str], screen_counts: D
             "top_objections": [o for o, _ in objections.most_common(8)],
         }
 
-    ranked = sorted(
-        (label for label in labels if variants[label]["overall"].get("would_apply") is not None),
-        key=lambda label: variants[label]["overall"]["would_apply"],
-        reverse=True,
-    )
-    return {"mode": "landing", "banners": variants, "ranking": ranked}
+    return {"mode": "landing", "banners": variants, **rank(variants, labels, answers, "would_apply")}

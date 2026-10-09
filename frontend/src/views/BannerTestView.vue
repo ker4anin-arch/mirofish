@@ -103,6 +103,7 @@
 
         <template v-if="test?.status === 'completed' && test.stats">
           <p class="bt-note">{{ $t('banner.syntheticNote') }}</p>
+          <p v-if="hasSsr" class="bt-note bt-note-info">{{ $t('banner.ssrNote') }}</p>
 
           <div class="bt-cards">
             <div
@@ -117,11 +118,26 @@
               </div>
               <img :src="imageUrl(b.label)" :alt="b.name" />
               <table class="bt-metrics">
-                <tr v-for="m in metricRows" :key="m.key">
+                <tr v-if="confidenceOf(b.label)" class="bt-main">
+                  <td>{{ $t('banner.metrics.win_pct') }}</td>
+                  <td class="num">{{ confidenceOf(b.label).win_pct }}%</td>
+                </tr>
+                <tr v-for="m in metricRows" :key="m.key" :class="{ 'bt-main': m.main }">
                   <td>{{ $t(`banner.metrics.${m.key}`) }}</td>
-                  <td class="num">{{ formatMetric(test.stats.banners[b.label]?.overall?.[m.key], m.pct) }}</td>
+                  <td class="num">
+                    {{ formatMetric(test.stats.banners[b.label]?.overall?.[m.key], m.pct) }}
+                    <span v-if="m.key === primaryKey && confidenceOf(b.label)" class="bt-ci">
+                      {{ confidenceOf(b.label).ci[0].toFixed(1) }}–{{ confidenceOf(b.label).ci[1].toFixed(1) }}
+                    </span>
+                  </td>
                 </tr>
               </table>
+              <div v-if="distOf(b.label)" class="bt-dist" :title="$t('banner.distHint')">
+                <div v-for="(p, i) in distOf(b.label)" :key="i" class="bt-dist-col">
+                  <div class="bt-dist-bar"><div :style="{ height: p + '%' }"></div></div>
+                  <span>{{ i + 1 }}</span>
+                </div>
+              </div>
               <div v-if="test.stats.banners[b.label]?.top_objections?.length" class="bt-objections">
                 <strong>{{ $t('banner.objections') }}</strong>
                 <ul>
@@ -191,8 +207,8 @@
           <h2>{{ $t('banner.quotes') }}</h2>
           <div class="bt-quotes">
             <div v-for="(a, i) in quotes" :key="i" class="bt-quote">
-              <span class="bt-muted">{{ a.banner }} · {{ a.segment }} · {{ $t(`banner.metrics.${primaryKey}`) }} {{ a[primaryKey] }}/5</span>
-              <p>«{{ a.reaction || a.decision_reason }}»</p>
+              <span class="bt-muted">{{ a.banner }} · {{ a.segment }} · {{ $t(`banner.metrics.${primaryKey}`) }} {{ formatMetric(a[primaryKey]) }}</span>
+              <p>«{{ a.click_thoughts || a.apply_thoughts || a.reaction || a.decision_reason }}»</p>
             </div>
           </div>
         </template>
@@ -221,6 +237,9 @@ const router = useRouter()
 
 const placements = ['vk_feed', 'telegram', 'website', 'rsya', 'outdoor', 'other']
 const landingMetricRows = [
+  { key: 'ssr_would_apply', main: true, ssr: true },
+  { key: 'ssr_would_apply_pct', pct: true, ssr: true },
+  { key: 'ssr_trust', ssr: true },
   { key: 'would_apply' },
   { key: 'apply_pct', pct: true },
   { key: 'understood_pct', pct: true },
@@ -229,6 +248,10 @@ const landingMetricRows = [
   { key: 'trust' }
 ]
 const bannerMetricRows = [
+  { key: 'ssr_click_intent', main: true, ssr: true },
+  { key: 'ssr_click_intent_pct', pct: true, ssr: true },
+  { key: 'ssr_trust', ssr: true },
+  { key: 'ssr_relevance', ssr: true },
   { key: 'click_intent' },
   { key: 'would_click_pct', pct: true },
   { key: 'clarity' },
@@ -365,8 +388,17 @@ const imageUrl = (label) => bannerImageUrl(testId.value, label)
 const screenUrl = (label, n) => landingScreenUrl(testId.value, label, n)
 
 const isLanding = computed(() => test.value?.mode === 'landing')
-const primaryKey = computed(() => (isLanding.value ? 'would_apply' : 'click_intent'))
-const metricRows = computed(() => (isLanding.value ? landingMetricRows : bannerMetricRows))
+// Tests made before text-based scales have only the direct 1-5 scores.
+const hasSsr = computed(() => (test.value?.stats?.ranking_metric || '').startsWith('ssr_'))
+const primaryKey = computed(() => {
+  const base = isLanding.value ? 'would_apply' : 'click_intent'
+  return hasSsr.value ? `ssr_${base}` : base
+})
+const metricRows = computed(() =>
+  (isLanding.value ? landingMetricRows : bannerMetricRows).filter((m) => hasSsr.value || !m.ssr)
+)
+const confidenceOf = (label) => test.value?.stats?.confidence?.[label] || null
+const distOf = (label) => test.value?.stats?.banners?.[label]?.overall?.[`${primaryKey.value}_dist`] || null
 const maxScreens = computed(() => Math.max(0, ...(test.value?.banners || []).map((b) => b.screens?.length || 0)))
 const reachAt = (label, n) => test.value?.stats?.banners?.[label]?.overall?.reach?.[n - 1]
 
@@ -513,6 +545,13 @@ const renderMarkdown = (md) => {
 .bt-badge { background: #FF4500; color: #fff; font-size: 0.72rem; padding: 2px 8px; margin-left: 6px; }
 .bt-metrics { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
 .bt-metrics td { padding: 4px 0; border-bottom: 1px solid #f2f2f2; }
+.bt-metrics tr.bt-main td { font-weight: 700; }
+.bt-ci { display: block; font-size: 0.72rem; color: #999; font-weight: 400; }
+.bt-note-info { background: #eef5ff; border-left-color: #3b82f6; }
+.bt-dist { display: flex; gap: 6px; align-items: flex-end; margin-top: 10px; height: 60px; }
+.bt-dist-col { flex: 1; display: flex; flex-direction: column; align-items: center; font-size: 0.7rem; color: #888; }
+.bt-dist-bar { width: 100%; height: 44px; background: #f5f5f5; display: flex; align-items: flex-end; }
+.bt-dist-bar div { width: 100%; background: #FF4500; }
 .num { text-align: right; font-family: 'JetBrains Mono', monospace; }
 .bt-objections { margin-top: 12px; font-size: 0.85rem; color: #444; }
 .bt-objections ul { padding-left: 18px; margin: 6px 0 0; }

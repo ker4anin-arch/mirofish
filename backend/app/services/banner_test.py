@@ -35,6 +35,7 @@ from ..config import Config
 from ..utils.locale import get_language_instruction, get_locale, set_locale
 from ..utils.logger import get_logger
 from ..utils.openai_chat_compat import create_chat_completion, extract_chat_completion_text
+from . import semantic_scale
 from .crowd_generator import CrowdGenerator
 
 logger = get_logger("mirofish.banner_test")
@@ -55,6 +56,41 @@ PLACEMENTS = {
 }
 
 SCORE_FIELDS = ("click_intent", "trust", "relevance", "clarity")
+
+# Free-text answers scored by semantic similarity: {name: (anchor scale, text field)}.
+SSR_FIELDS = {
+    "click_intent": ("click", "click_thoughts"),
+    "trust": ("trust", "trust_thoughts"),
+    "relevance": ("relevance", "relevance_thoughts"),
+}
+
+# Models are more attentive and agreeable than people. Each panel member gets
+# an everyday attitude to advertising, in realistic proportions, so the panel
+# includes the people who barely look and the ones looking for a catch.
+AD_ATTITUDES = (
+    (0.30, "Обычно рекламу почти не замечаешь и пролистываешь не глядя; задерживаешься, только если зацепило мгновенно."),
+    (0.25, "К рекламе относишься скептически: ищешь подвох и мелкий шрифт в условиях."),
+    (0.30, "К рекламе нейтрален: смотришь, только если тема актуальна для тебя прямо сейчас."),
+    (0.15, "Открыт к новому и иногда кликаешь на рекламу из любопытства."),
+)
+
+
+def assign_attitudes(panel: List[Dict[str, Any]], seed: int = 0) -> None:
+    """Give every member an ad attitude, keeping the AD_ATTITUDES shares."""
+
+    slots: List[str] = []
+    for share, text in AD_ATTITUDES:
+        slots.extend([text] * round(share * len(panel)))
+    while len(slots) < len(panel):
+        slots.append(AD_ATTITUDES[2][1])
+    random.Random(seed).shuffle(slots)
+    for person, attitude in zip(panel, slots):
+        person["ad_attitude"] = attitude
+
+
+def attitude_line(person: Dict[str, Any]) -> str:
+    attitude = person.get("ad_attitude")
+    return f"\nТвоё обычное отношение к рекламе: {attitude}\n" if attitude else ""
 
 
 # --------------------------------------------------------------------- storage
@@ -259,6 +295,7 @@ class BannerTestRunner:
             }
             for profile, entity in zip(profiles, entities)
         ]
+        assign_attitudes(panel)
         _write_json(os.path.join(self.dir, "panel.json"), panel)
         return panel
 
@@ -270,15 +307,19 @@ class BannerTestRunner:
         )
         prompt = f"""Кто ты:
 {person['persona']}
-
+{attitude_line(person)}
 Ситуация: ты листаешь и видишь этот баннер — {meta['placement_text']}.
 Обычно на рекламу смотрят 1–2 секунды; оценивай так, как отреагировал бы на самом деле.
+Если тебе неинтересно или ты бы его даже не заметил — так и скажи, так реагирует большинство людей.
 
-Ответь в JSON:
+Ответь в JSON (поля *_thoughts — своими словами, честно, 1–2 фразы, без цифр):
 {{
   "noticed_first": "что бросилось в глаза в первую секунду",
   "understood": true или false — понял ли, что именно предлагают,
   "offer_in_own_words": "что, по-твоему, предлагают (своими словами)",
+  "click_thoughts": "нажал бы ты на этот баннер или пролистал — и почему",
+  "trust_thoughts": "веришь ли ты этому предложению и бренду — и почему",
+  "relevance_thoughts": "нужно ли это лично тебе сейчас — и почему",
   "clarity": 1-5,
   "trust": 1-5 (1 = похоже на развод/навязчивую рекламу, 5 = доверяю),
   "relevance": 1-5 (насколько это нужно лично тебе),
@@ -303,7 +344,8 @@ class BannerTestRunner:
                 answer[field] = None
         understood = data.get("understood")
         answer["understood"] = understood if isinstance(understood, bool) else str(understood).lower() in ("true", "да", "1")
-        for field in ("noticed_first", "offer_in_own_words", "emotion", "reaction"):
+        for field in ("noticed_first", "offer_in_own_words", "emotion", "reaction",
+                      "click_thoughts", "trust_thoughts", "relevance_thoughts"):
             answer[field] = str(data.get(field) or "")[:500]
         for field in ("objections", "suggestions"):
             values = data.get(field) or []
@@ -352,8 +394,9 @@ class BannerTestRunner:
             samples.append({
                 "banner": f"{banner['label']} ({banner['name']})",
                 "answers": [
-                    {k: row[k] for k in ("segment", "click_intent", "trust", "understood",
-                                         "offer_in_own_words", "reaction", "objections", "suggestions")}
+                    {k: row.get(k) for k in ("segment", "ssr_click_intent", "click_intent", "trust", "understood",
+                                             "offer_in_own_words", "click_thoughts", "reaction",
+                                             "objections", "suggestions")}
                     for row in picked
                 ],
             })
@@ -362,6 +405,8 @@ class BannerTestRunner:
 
 Посчитанные метрики (средние 1-5, доля понявших оффер), общие и по сегментам:
 {json.dumps(stats, ensure_ascii=False)}
+
+{SSR_REPORT_NOTE}
 
 Выборка ответов участников:
 {json.dumps(samples, ensure_ascii=False)}
@@ -380,6 +425,18 @@ class BannerTestRunner:
         ], temperature=0.4)
         return str(data.get("markdown") or "")
 
+    def _apply_semantic_scales(self, answers: List[Dict[str, Any]], fields: Dict[str, tuple]) -> None:
+        """Score free-text answers on 1-5 scales; the test still completes without it."""
+
+        try:
+            semantic_scale.score_answers(answers, fields)
+        except Exception as error:  # noqa: BLE001 - optional enrichment
+            logger.warning("Semantic scale scoring failed, using direct scores only: %s", error)
+            return
+        with open(os.path.join(self.dir, "answers.jsonl"), "w", encoding="utf-8") as out:
+            for answer in answers:
+                out.write(json.dumps(answer, ensure_ascii=False) + "\n")
+
     # -- entry point -----------------------------------------------------
 
     def run(self) -> None:
@@ -392,6 +449,8 @@ class BannerTestRunner:
             answers = self._collect_answers(meta, panel)
             if not answers:
                 raise RuntimeError("модель не вернула ни одного ответа")
+            self._update(progress=86, message="Переводим ответы в шкалы...")
+            self._apply_semantic_scales(answers, SSR_FIELDS)
             self._update(progress=88, message="Считаем метрики и пишем отчёт...")
             stats = aggregate(answers, [b["label"] for b in meta["banners"]])
             _write_json(os.path.join(self.dir, "stats.json"), stats)
@@ -417,6 +476,16 @@ def start_test(test_id: str) -> None:
 
 # ------------------------------------------------------------------ aggregate
 
+SSR_REPORT_NOTE = (
+    "Метрики ssr_* посчитаны не из цифр, которые поставила модель, а из свободных ответов участников "
+    "(сходство текста с эталонными фразами шкалы) — они ближе к реальным людям, опирайся в первую "
+    "очередь на них; прямые оценки 1-5 обычно завышены. ssr_*_pct — доля склонных сделать действие. "
+    "confidence: win_pct — в скольких процентах перевыборок панели вариант лидирует, ci — 95% интервал. "
+    "Если у лидера win_pct ниже 70, прямо скажи, что разница между вариантами ненадёжна. "
+    "В тексте отчёта не пиши технические имена полей (ssr_click_intent, win_pct, ci и т.п.) — называй "
+    "их по-человечески: «желание кликнуть», «склонны кликнуть», «шанс, что вариант лучший», «интервал»."
+)
+
 
 def _summarize(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     summary: Dict[str, Any] = {"n": len(rows)}
@@ -426,6 +495,8 @@ def _summarize(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     summary["understood_pct"] = round(100 * sum(1 for r in rows if r.get("understood")) / len(rows)) if rows else None
     clicks = [row["click_intent"] for row in rows if isinstance(row.get("click_intent"), int)]
     summary["would_click_pct"] = round(100 * sum(1 for v in clicks if v >= 4) / len(clicks)) if clicks else None
+    for name in SSR_FIELDS:
+        summary.update(semantic_scale.summarize(rows, name))
     return summary
 
 
@@ -449,9 +520,21 @@ def aggregate(answers: List[Dict[str, Any]], labels: List[str]) -> Dict[str, Any
             "top_objections": [o for o, _ in objections.most_common(8)],
         }
 
+    return {"banners": banners, **rank(banners, labels, answers, "click_intent")}
+
+
+def rank(variants: Dict[str, Any], labels: List[str], answers: List[Dict[str, Any]], key: str) -> Dict[str, Any]:
+    """Rank by the text-based score when every variant has it, else the direct one."""
+
+    if all(variants[label]["overall"].get(f"ssr_{key}") is not None for label in labels):
+        key = f"ssr_{key}"
     ranked = sorted(
-        (label for label in labels if banners[label]["overall"].get("click_intent") is not None),
-        key=lambda label: banners[label]["overall"]["click_intent"],
+        (label for label in labels if variants[label]["overall"].get(key) is not None),
+        key=lambda label: variants[label]["overall"][key],
         reverse=True,
     )
-    return {"banners": banners, "ranking": ranked}
+    return {
+        "ranking": ranked,
+        "ranking_metric": key,
+        "confidence": semantic_scale.confidence(answers, labels, key) if len(labels) > 1 else {},
+    }

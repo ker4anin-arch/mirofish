@@ -720,7 +720,14 @@
       "would_apply": "Would apply (1–5)",
       "apply_pct": "Likely to apply (4–5)",
       "want_to_scroll": "Want to scroll (1–5)",
-      "read_to_end_pct": "Read to the end"
+      "read_to_end_pct": "Read to the end",
+      "ssr_click_intent": "Click intent — from the answer text (1–5)",
+      "ssr_click_intent_pct": "Likely to click",
+      "ssr_trust": "Trust — from text (1–5)",
+      "ssr_relevance": "Relevance — from text (1–5)",
+      "ssr_would_apply": "Intent to apply — from text (1–5)",
+      "ssr_would_apply_pct": "Likely to apply",
+      "win_pct": "Chance this variant is best"
     },
     "placements": {
       "vk_feed": "VK feed",
@@ -751,6 +758,8 @@
     "funnelHint": "Share of the panel that reached each screen and how convincing it is (1–5). A sharp drop is where you lose people.",
     "screen": "Screen",
     "reached": "reached",
-    "convincing": "convincing"
+    "convincing": "convincing",
+    "ssrNote": "The main metrics come from what panel members wrote in their own words (matched to reference statements for each scale point), not from the numbers the model picked — this is closer to real people. 'Chance this variant is best' shows how stable the leader is: below 70% the difference is unreliable. Direct 1–5 scores are kept below for comparison.",
+    "distHint": "Distribution of answers on the 1–5 scale"
   }
 }
