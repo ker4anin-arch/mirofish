@@ -1896,7 +1896,7 @@ def get_run_status(simulation_id: str):
         }
     """
     try:
-        run_state = SimulationRunner.get_run_state(simulation_id)
+        run_state = SimulationRunner.reconcile_orphaned_run(simulation_id)
         
         if not run_state:
             return jsonify({
@@ -1913,9 +1913,18 @@ def get_run_status(simulation_id: str):
                 }
             })
         
+        data = run_state.to_dict()
+        updater = ZepGraphMemoryManager.get_updater(simulation_id)
+        if updater is not None:
+            stats = updater.get_stats()
+            data["graph_memory"] = {
+                "items_sent": stats.get("items_sent", 0),
+                "total_activities": stats.get("total_activities", 0),
+                "pending_episodes": stats.get("pending_episode_count", 0),
+            }
         return jsonify({
             "success": True,
-            "data": run_state.to_dict()
+            "data": data
         })
         
     except Exception as e:

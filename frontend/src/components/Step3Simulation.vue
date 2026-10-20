@@ -515,6 +515,7 @@ const stopPolling = () => {
 const prevTwitterRound = ref(0)
 const prevRedditRound = ref(0)
 
+let lastGraphNote = ''
 const fetchRunStatus = async () => {
   if (!props.simulationId) return
   
@@ -547,6 +548,15 @@ const fetchRunStatus = async () => {
         addLog(t('log.allPlatformsCompleted'))
         addLog(t('log.autoStopping'))
         requestStop()
+      }
+
+      if (data.runner_status === 'stopping' && data.graph_memory) {
+        const g = data.graph_memory
+        const note = t('log.graphFinalizing', { pending: g.pending_episodes })
+        if (note !== lastGraphNote) {
+          addLog(note)
+          lastGraphNote = note
+        }
       }
 
       // runner_status is authoritative because the backend only publishes a

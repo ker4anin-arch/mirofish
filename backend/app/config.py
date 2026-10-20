@@ -50,6 +50,10 @@ class Config:
     GRAPH_LLM_STRUCTURED_OUTPUT = os.environ.get('GRAPH_LLM_STRUCTURED_OUTPUT', 'json_object')
     GRAPH_MAX_COROUTINES = int(os.environ.get('GRAPH_MAX_COROUTINES', '8'))
     GRAPH_INGESTION_TIMEOUT_SECONDS = int(os.environ.get('GRAPH_INGESTION_TIMEOUT_SECONDS', '7200'))
+    # How long a finished or stopped simulation waits for its actions to be
+    # written into the graph. Whatever is left keeps being written in the
+    # background; the run is finished and the report can start meanwhile.
+    GRAPH_FINALIZE_WAIT_SECONDS = int(os.environ.get('GRAPH_FINALIZE_WAIT_SECONDS', '300'))
 
     # Embeddings: any OpenAI-compatible endpoint, or a local model when
     # EMBEDDING_API_KEY is empty (DeepSeek has no embeddings API).

@@ -237,6 +237,26 @@ class SimulationRunner:
     _finalization_locks: Dict[str, threading.Lock] = {}
     _finalization_locks_guard = threading.Lock()
     _manual_stop_requests: set[str] = set()
+    # Runs the server closed itself after the last round (see the monitor).
+    _auto_finished: set[str] = set()
+
+    # After every platform reports simulation_end, OASIS keeps the process
+    # alive waiting for interview commands. Close it after this grace period
+    # so the run finishes even when no browser tab is watching it.
+    AUTO_FINISH_GRACE_SECONDS = 10
+    # How long a stop request waits for finalization before answering
+    # "still stopping"; the UI keeps polling the run status.
+    STOP_REQUEST_WAIT_SECONDS = 15
+
+    @staticmethod
+    def _finalize_graph_memory(simulation_id: str) -> None:
+        """Bounded drain: leftovers keep being written in the background."""
+
+        ZepGraphMemoryManager.stop_updater(
+            simulation_id,
+            max_wait=Config.GRAPH_FINALIZE_WAIT_SECONDS,
+            abandon_pending=True,
+        )
 
     @classmethod
     def _finalization_lock(cls, simulation_id: str) -> threading.Lock:
@@ -297,6 +317,54 @@ class SimulationRunner:
             cls._run_states[simulation_id] = state
         return state
     
+    @classmethod
+    def reconcile_orphaned_run(cls, simulation_id: str) -> Optional[SimulationRunState]:
+        """Finish a run whose process is gone, e.g. after a server restart.
+
+        run_state.json then still says running/stopping, but nothing in this
+        server process owns the run any more, so the UI would wait forever.
+        """
+
+        lock = cls._finalization_lock(simulation_id)
+        if not lock.acquire(blocking=False):
+            return cls.get_run_state(simulation_id)  # finalization in progress
+        try:
+            state = cls.get_run_state(simulation_id)
+            if state is None or state.runner_status not in {
+                RunnerStatus.RUNNING,
+                RunnerStatus.PAUSED,
+                RunnerStatus.STOPPING,
+            }:
+                return state
+            process = cls._processes.get(simulation_id)
+            monitor = cls._monitor_threads.get(simulation_id)
+            if (
+                (process is not None and process.poll() is None)
+                or (monitor is not None and monitor.is_alive())
+                or ZepGraphMemoryManager.get_updater(simulation_id) is not None
+            ):
+                return state
+            finished = cls._check_all_platforms_completed(state)
+            if finished or state.runner_status == RunnerStatus.STOPPING:
+                state.runner_status = RunnerStatus.COMPLETED if finished else RunnerStatus.STOPPED
+                state.error = None
+            else:
+                state.runner_status = RunnerStatus.FAILED
+                state.error = "Процесс симуляции прерван (сервер перезапускался)"
+            state.twitter_running = False
+            state.reddit_running = False
+            state.completed_at = state.completed_at or datetime.now().isoformat()
+            cls._save_run_state(state)
+            cls._sync_simulation_status(simulation_id, state.runner_status, state.error)
+            logger.warning(
+                "Run %s had no live process; marked %s",
+                simulation_id,
+                state.runner_status.value,
+            )
+            return state
+        finally:
+            lock.release()
+
     @classmethod
     def _load_run_state(cls, simulation_id: str) -> Optional[SimulationRunState]:
         """从文件加载运行状态"""
@@ -647,6 +715,7 @@ class SimulationRunner:
         
         monitor_error: Exception | None = None
         exit_code: int | None = None
+        all_done_since: float | None = None
         try:
             while process.poll() is None:  # 进程仍在运行
                 # 读取 Twitter 动作日志
@@ -663,6 +732,23 @@ class SimulationRunner:
                 
                 # 更新状态
                 cls._save_run_state(state)
+
+                if cls._check_all_platforms_completed(state):
+                    all_done_since = all_done_since or time.time()
+                    if (
+                        time.time() - all_done_since >= cls.AUTO_FINISH_GRACE_SECONDS
+                        and simulation_id not in cls._manual_stop_requests
+                        and simulation_id not in cls._auto_finished
+                    ):
+                        logger.info(
+                            "All rounds finished, closing the simulation process: %s",
+                            simulation_id,
+                        )
+                        cls._auto_finished.add(simulation_id)
+                        try:
+                            cls._terminate_process(process, simulation_id)
+                        except Exception as error:  # noqa: BLE001 - next loop re-checks
+                            logger.warning("Could not close finished simulation %s: %s", simulation_id, error)
                 time.sleep(2)
             
             # 进程结束后，最后读取一次日志
@@ -691,6 +777,9 @@ class SimulationRunner:
                     RunnerStatus.FAILED,
                 }:
                     manual_stop = simulation_id in cls._manual_stop_requests
+                    # Closed by the monitor after the last round: a signal exit
+                    # code is expected, the run itself completed.
+                    auto_finished = simulation_id in cls._auto_finished
                     desired_status = (
                         RunnerStatus.STOPPED
                         if manual_stop
@@ -700,7 +789,7 @@ class SimulationRunner:
                     if not manual_stop and monitor_error is not None:
                         desired_status = RunnerStatus.FAILED
                         error_message = str(monitor_error)
-                    elif not manual_stop and exit_code != 0:
+                    elif not manual_stop and not auto_finished and exit_code != 0:
                         desired_status = RunnerStatus.FAILED
                         main_log_path = os.path.join(sim_dir, "simulation.log")
                         error_info = ""
@@ -728,7 +817,7 @@ class SimulationRunner:
                             RunnerStatus.STOPPING,
                         )
                         try:
-                            ZepGraphMemoryManager.stop_updater(simulation_id)
+                            cls._finalize_graph_memory(simulation_id)
                             cls._graph_memory_enabled.pop(simulation_id, None)
                             logger.info(
                                 "已停止图谱记忆更新: simulation_id=%s",
@@ -748,11 +837,12 @@ class SimulationRunner:
                         desired_status,
                         error_message,
                     )
-                    if desired_status == RunnerStatus.COMPLETED:
-                        logger.info(f"模拟完成: {simulation_id}")
-                    else:
+                    if desired_status == RunnerStatus.FAILED:
                         logger.error(f"模拟失败: {simulation_id}, error={state.error}")
+                    else:
+                        logger.info(f"模拟结束: {simulation_id}, status={desired_status.value}")
                 cls._manual_stop_requests.discard(simulation_id)
+                cls._auto_finished.discard(simulation_id)
             
             # 清理进程资源
             cls._processes.pop(simulation_id, None)
@@ -1033,12 +1123,7 @@ class SimulationRunner:
             and monitor is not threading.current_thread()
             and monitor.is_alive()
         ):
-            wait_timeout = max(
-                30.0,
-                ZEP_INGESTION_WAIT_TIMEOUT_SECONDS
-                + ZEP_HTTP_REQUEST_TIMEOUT_SECONDS
-                + 5,
-            )
+            wait_timeout = float(cls.STOP_REQUEST_WAIT_SECONDS)
             monitor.join(timeout=wait_timeout)
             if monitor.is_alive():
                 # The monitor still owns finalization and may be inside one
@@ -1055,7 +1140,7 @@ class SimulationRunner:
                 state = cls.get_run_state(simulation_id) or state
                 if cls._graph_memory_enabled.get(simulation_id, False):
                     try:
-                        ZepGraphMemoryManager.stop_updater(simulation_id)
+                        cls._finalize_graph_memory(simulation_id)
                         cls._graph_memory_enabled.pop(simulation_id, None)
                     except Exception as error:
                         state.runner_status = RunnerStatus.FAILED

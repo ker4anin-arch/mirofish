@@ -309,9 +309,16 @@ class ZepGraphMemoryUpdater:
         self._worker_thread.start()
         logger.info(f"ZepGraphMemoryUpdater 已启动: graph_id={self.graph_id}")
     
-    def stop(self):
-        """Drain the worker, flush tail events, and wait for Cloud ingestion."""
-        deadline = time.time() + ZEP_INGESTION_WAIT_TIMEOUT_SECONDS
+    def stop(self, max_wait: float | None = None, abandon_pending: bool = False):
+        """Drain the worker, flush tail events, and wait for Cloud ingestion.
+
+        With ``abandon_pending`` the wait for episodes that are already queued
+        in the graph ends after ``max_wait`` seconds without an error: they
+        keep being processed in the background.
+        """
+        deadline = time.time() + (
+            ZEP_INGESTION_WAIT_TIMEOUT_SECONDS if max_wait is None else max_wait
+        )
         # Serialize the accepting->closed transition with add_activity's
         # check+enqueue operation. This closes the small race where a producer
         # could enqueue after both the worker and final flush had exited.
@@ -344,7 +351,18 @@ class ZepGraphMemoryUpdater:
                 self.simulation_id,
             )
 
-        self._wait_for_pending_episodes(deadline=deadline)
+        try:
+            self._wait_for_pending_episodes(deadline=deadline)
+        except TimeoutError:
+            if not abandon_pending:
+                raise
+            logger.warning(
+                "%s graph memory episode(s) for %s are still being written; "
+                "finishing the run, they continue in the background",
+                len(self._pending_episode_uuids),
+                self.simulation_id,
+            )
+            self._pending_episode_uuids = []
         if self._failed_episode_count:
             logger.warning(
                 "%s graph memory episode(s) failed extraction for %s; "
@@ -747,7 +765,12 @@ class ZepGraphMemoryManager:
         return True
     
     @classmethod
-    def stop_updater(cls, simulation_id: str):
+    def stop_updater(
+        cls,
+        simulation_id: str,
+        max_wait: float | None = None,
+        abandon_pending: bool = False,
+    ):
         """停止并移除模拟的更新器"""
         with cls._lock:
             updater = cls._updaters.get(simulation_id)
@@ -758,7 +781,7 @@ class ZepGraphMemoryManager:
         # polling. Crucially, only remove the updater after a successful drain;
         # on failure it remains visible to report/deletion barriers and can be
         # stopped again.
-        updater.stop()
+        updater.stop(max_wait=max_wait, abandon_pending=abandon_pending)
         with cls._lock:
             if cls._updaters.get(simulation_id) is updater:
                 cls._updaters.pop(simulation_id, None)

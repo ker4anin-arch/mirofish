@@ -35,7 +35,7 @@ def test_manual_stop_surfaces_graph_ingestion_failure(monkeypatch):
         runner_module.ZepGraphMemoryManager,
         "stop_updater",
         classmethod(
-            lambda _cls, _simulation_id: (_ for _ in ()).throw(
+            lambda _cls, _simulation_id, **_kwargs: (_ for _ in ()).throw(
                 RuntimeError("ingestion incomplete")
             )
         ),
@@ -87,7 +87,7 @@ def test_manual_stop_timeout_leaves_monitor_owned_state_stopping(monkeypatch):
 
     class Monitor:
         def join(self, timeout):
-            assert timeout >= 30
+            assert timeout >= SimulationRunner.STOP_REQUEST_WAIT_SECONDS
 
         def is_alive(self):
             return True
@@ -139,7 +139,7 @@ def test_failed_ingestion_finalization_can_be_retried(monkeypatch):
     monkeypatch.setattr(
         runner_module.ZepGraphMemoryManager,
         "stop_updater",
-        classmethod(lambda _cls, _simulation_id: None),
+        classmethod(lambda _cls, _simulation_id, **_kwargs: None),
     )
     SimulationRunner._graph_memory_enabled["sim-retry"] = True
     SimulationRunner._monitor_threads.pop("sim-retry", None)
@@ -160,7 +160,7 @@ def test_stop_api_keeps_pending_finalization_out_of_failed_state(monkeypatch):
         simulation_api.SimulationRunner,
         "stop_simulation",
         classmethod(
-            lambda _cls, _simulation_id: (_ for _ in ()).throw(
+            lambda _cls, _simulation_id, **_kwargs: (_ for _ in ()).throw(
                 SimulationStopPending("still draining")
             )
         ),
@@ -239,7 +239,7 @@ def test_force_restart_does_not_continue_while_old_ingestion_is_pending(monkeypa
         simulation_api.SimulationRunner,
         "stop_simulation",
         classmethod(
-            lambda _cls, _simulation_id: (_ for _ in ()).throw(
+            lambda _cls, _simulation_id, **_kwargs: (_ for _ in ()).throw(
                 SimulationStopPending("still draining")
             )
         ),
@@ -359,7 +359,7 @@ def test_shutdown_terminates_producer_before_tail_read_and_updater_drain(
         alive = True
 
         def join(self, timeout):
-            assert timeout >= 30
+            assert timeout >= SimulationRunner.STOP_REQUEST_WAIT_SECONDS
             events.extend(["tail-read", "updater-drain"])
             state.runner_status = RunnerStatus.STOPPED
             SimulationRunner._graph_memory_enabled.pop(simulation_id, None)
@@ -462,7 +462,7 @@ def test_shutdown_drain_failure_remains_failed_and_retryable(monkeypatch):
         runner_module.ZepGraphMemoryManager,
         "stop_updater",
         classmethod(
-            lambda _cls, _simulation_id: (_ for _ in ()).throw(
+            lambda _cls, _simulation_id, **_kwargs: (_ for _ in ()).throw(
                 RuntimeError("drain incomplete")
             )
         ),
